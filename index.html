@@ -956,7 +956,7 @@ html, body { overflow-x: hidden; }
 
   CI.Config = {
     appName: "Chileshe Loans",
-    version: "1.4.2",
+    version: "1.3.0",
 
     business: {
       name: "CHILESHE INNOVATIONS",
@@ -993,23 +993,6 @@ html, body { overflow-x: hidden; }
 
        NEVER put the admin key (or sb_secret_…) in this file.
        ------------------------------------------------------------------ */
-    /* ------------------------------------------------------------------
-       Email confirmations (EmailJS — free, works from the browser).
-       Create a free account at https://www.emailjs.com, connect the office
-       Gmail, make one template, then paste the three values here — or type
-       them once in Staff → Settings → Email.
-       The EmailJS public key is designed to be public.
-       ------------------------------------------------------------------ */
-    mail: {
-      provider: "",          // "emailjs" or "webhook"
-      serviceId: "",         // e.g. "service_ab12cd3"
-      templateId: "",        // e.g. "template_xy98zw7"
-      publicKey: "",         // e.g. "Zk3n...public key..."
-      endpoint: "",          // for the webhook option
-      replyTo: "",           // e.g. "loans@chileshe.co.zm"
-      staffEmail: ""         // optional copy to the office
-    },
-
     supabase: {
       // 1. your project (Project Settings → Data API)
       url: "https://vvrffehhofnvypujtyhn.supabase.co",
@@ -1079,8 +1062,7 @@ html, body { overflow-x: hidden; }
       users: [],          // client accounts { id, name, phone, pinHash, nrc, ... }
       applications: [],   // loan applications { ref, userId, amount, weeks, ..., status }
       loans: [],          // approved loans { ref, userId, principal, ..., dueDate, status }
-      payments: [],
-      mails: [],       // { id, ref, amount, date, method, receiptNo, recordedBy }
+      payments: [],       // { id, ref, amount, date, method, receiptNo, recordedBy }
       notifications: [],  // { id, userId | 'admin', type, title, body, date, read }
       activity: [],       // audit trail { id, at, actor, action, detail }
       settings: {
@@ -2323,354 +2305,6 @@ html, body { overflow-x: hidden; }
 })();
 
 
-/* ===== mail.js ===== */
-/* ==========================================================================
-   Email confirmations.
-
-   Sends registration, application, approval, payment and reminder emails to
-   the client's own address — the same way the Bible-school app does.
-
-   Transports (choose in Staff → Settings → Email):
-     • EmailJS  — works straight from the browser, free plan, no server.
-                  https://www.emailjs.com  (Service + Template + Public key)
-     • Webhook  — POST JSON to any URL, e.g. a Google Apps Script mailer.
-
-   Nothing is ever sent silently: every attempt is recorded in
-   Store.state.mails so the staff section shows exactly what went out, to
-   whom, and whether it succeeded.
-   ========================================================================== */
-(function () {
-  "use strict";
-
-  var U = CI.U, UI = CI.UI, Store = CI.Store, Calc = CI.Calc;
-  var Mail = {};
-  var MAX_LOG = 200;
-
-  Mail.config = function () {
-    var c = (Store.state.settings.mail || {});
-    var defaults = (CI.Config.mail || {});
-    return {
-      provider: c.provider || defaults.provider || "",
-      serviceId: c.serviceId || defaults.serviceId || "",
-      templateId: c.templateId || defaults.templateId || "",
-      publicKey: c.publicKey || defaults.publicKey || "",
-      endpoint: c.endpoint || defaults.endpoint || "",
-      replyTo: c.replyTo || defaults.replyTo || (CI.Config.business.email || ""),
-      staffEmail: c.staffEmail || defaults.staffEmail || ""
-    };
-  };
-
-  Mail.enabled = function () {
-    var c = Mail.config();
-    if (c.provider === "emailjs") return !!(c.serviceId && c.templateId && c.publicKey);
-    if (c.provider === "webhook") return /^https?:\/\//.test(c.endpoint || "");
-    return false;
-  };
-
-  function validEmail(e) { return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(e || "").trim()); }
-  Mail.validEmail = validEmail;
-
-  /* ---------------- log ---------------- */
-  function log(entry) {
-    var st = Store.state;
-    if (!Array.isArray(st.mails)) st.mails = [];
-    st.mails.unshift(entry);
-    if (st.mails.length > MAX_LOG) st.mails.length = MAX_LOG;
-    try { Store.save(); } catch (e) {}
-  }
-  Mail.log = function () { return (Store.state.mails || []).slice(); };
-  Mail.pendingCount = function () { return Mail.log().filter(function (m) { return m.status === "queued"; }).length; };
-
-  /* ---------------- transports ---------------- */
-  function transport(to, name, subject, message) {
-    var c = Mail.config();
-    if (c.provider === "emailjs") {
-      if (!Mail.enabled()) return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
-      return fetch("https://api.emailjs.com/api/v1.0/email/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          service_id: c.serviceId,
-          template_id: c.templateId,
-          user_id: c.publicKey,
-          template_params: {
-            to_email: to,
-            to_name: name || "",
-            subject: subject,
-            message: message,
-            from_name: CI.Config.business.legalName,
-            reply_to: c.replyTo || CI.Config.business.email || "",
-            business_phone: CI.Config.business.phoneDisplay
-          }
-        })
-      }).then(function (r) {
-        if (!r.ok) throw new Error("EmailJS responded " + r.status);
-        return { ok: true };
-      });
-    }
-    if (c.provider === "webhook") {
-      if (!Mail.enabled()) return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
-      return fetch(c.endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          to: to, name: name || "", subject: subject, message: message,
-          from: CI.Config.business.legalName,
-          replyTo: c.replyTo || "", staffEmail: c.staffEmail || ""
-        })
-      }).then(function (r) {
-        if (!r.ok) throw new Error("Mail server responded " + r.status);
-        return { ok: true };
-      });
-    }
-    return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
-  }
-
-  /**
-   * Send one email. Never throws: if the phone is offline the message is kept
-   * as "queued" and CI.Mail.flush() retries it later.
-   */
-  Mail.send = function (opts) {
-    opts = opts || {};
-    var to = String(opts.to || "").trim();
-    if (!validEmail(to)) {
-      log({ id: U.uid("mail"), to: to || "(none)", name: opts.name || "", subject: opts.subject || "",
-        kind: opts.kind || "message", ref: opts.ref || "", message: opts.message || "",
-        status: "no-address", attempts: 0, at: new Date().toISOString(),
-        error: "No email address on file" });
-      return Promise.resolve({ skipped: "no-email" });
-    }
-    if (!Mail.enabled()) {
-      log({ id: U.uid("mail"), to: to, name: opts.name || "", subject: opts.subject || "",
-        kind: opts.kind || "message", ref: opts.ref || "", message: opts.message || "",
-        status: "queued", attempts: 0, at: new Date().toISOString(),
-        error: "Email is not switched on yet" });
-      return Promise.resolve({ queued: true, error: "Email is not switched on yet" });
-    }
-
-    var entry = {
-      id: U.uid("mail"),
-      to: to,
-      name: opts.name || "",
-      subject: opts.subject || "",
-      kind: opts.kind || "message",
-      ref: opts.ref || "",
-      message: opts.message || "",
-      status: "sending",
-      attempts: 1,
-      at: new Date().toISOString()
-    };
-
-    return transport(to, entry.name, entry.subject, entry.message).then(function () {
-      entry.status = "sent";
-      entry.sentAt = new Date().toISOString();
-      log(entry);
-      staffCopy(to, entry);
-      return { ok: true };
-    }).catch(function (err) {
-      entry.status = "queued";
-      entry.error = err.message || String(err);
-      log(entry);
-      return { ok: false, error: entry.error };
-    });
-  };
-
-  /* Optional: send the office a copy of a client email (Settings → Staff copy).
-     Off unless a staff address is set, and never sent to the same address twice. */
-  function staffCopy(to, entry) {
-    var staff = String(Mail.config().staffEmail || "").trim();
-    if (!staff || !validEmail(staff) || staff.toLowerCase() === to.toLowerCase()) return;
-    if (entry.kind === "staff-copy" || entry.kind === "test") return;
-    var copy = {
-      id: U.uid("mail"), to: staff, name: "Office copy", subject: "[Copy] " + entry.subject,
-      kind: "staff-copy", ref: entry.ref || "", message: entry.message,
-      status: "sending", attempts: 1, at: new Date().toISOString()
-    };
-    transport(staff, copy.name, copy.subject, copy.message).then(function () {
-      copy.status = "sent"; copy.sentAt = new Date().toISOString(); log(copy);
-    }).catch(function (err) {
-      copy.status = "queued"; copy.error = err.message || String(err); log(copy);
-    });
-  }
-
-  /** Retry anything queued (called after a successful sync / when back online). */
-  Mail.flush = function () {
-    if (!Mail.enabled() || !navigator.onLine) return Promise.resolve(0);
-    var queued = Mail.log().filter(function (m) { return m.status === "queued"; }).reverse();
-    if (!queued.length) return Promise.resolve(0);
-    var done = 0, chain = Promise.resolve();
-    queued.forEach(function (m) {
-      chain = chain.then(function () {
-        return transport(m.to, m.name, m.subject, m.message).then(function () {
-          m.status = "sent"; m.sentAt = new Date().toISOString(); done++;
-          Store.save();
-        }).catch(function () { m.attempts = (m.attempts || 1) + 1; Store.save(); });
-      });
-    });
-    return chain.then(function () { return done; });
-  };
-
-  /* ---------------- message templates ---------------- */
-  var B = function () { return CI.Config.business; };
-  function sign() {
-    return "\n\n" + B().legalName + "\n" + B().phoneDisplay + " · WhatsApp " + B().phoneDisplay + "\n" + B().address;
-  }
-
-  Mail.templates = {
-    welcome: function (user) {
-      return {
-        kind: "welcome",
-        subject: "Your " + B().name + " account is ready",
-        message:
-          "Hello " + user.fullName + ",\n\n" +
-          "Your account with " + B().legalName + " has been created successfully.\n\n" +
-          "Phone on record: " + user.phone + "\n" +
-          "You can now apply for a loan, track your balance and receive receipts in the app.\n\n" +
-          "Keep your PIN private. If this was not you, call us immediately on " + B().phoneDisplay + "." + sign()
-      };
-    },
-    application: function (app, user) {
-      return {
-        kind: "application",
-        subject: "Application received — " + app.ref,
-        message:
-          "Hello " + app.fullName + ",\n\n" +
-          "We have received your loan application.\n\n" +
-          "Reference: " + app.ref + "\n" +
-          "Tracking code: " + app.accessCode + "\n" +
-          "Amount requested: " + U.money(app.amount) + "\n" +
-          "Term: " + app.weeks + " week" + (app.weeks > 1 ? "s" : "") + " at " + app.pct + "%\n" +
-          "Total repayable if approved: " + U.money(app.total) + "\n" +
-          "Purpose: " + (app.purpose || "—") + "\n\n" +
-          "Our team reviews applications during business hours. Keep this tracking code — you can follow the application on the Track screen without signing in." + sign()
-      };
-    },
-    approved: function (loan, app) {
-      return {
-        kind: "approved",
-        subject: "Loan approved — " + loan.ref,
-        message:
-          "Hello " + loan.customerName + ",\n\n" +
-          "Good news — your loan has been approved.\n\n" +
-          "Loan: " + loan.ref + "\n" +
-          "Principal: " + U.money(loan.principal) + "\n" +
-          "Interest (" + loan.pct + "% flat): " + U.money(loan.interest) + "\n" +
-          "Total repayable: " + U.money(loan.total) + "\n" +
-          "Due date: " + U.fmtDate(loan.dueDate, "long") + "\n\n" +
-          "You can see the full schedule, make payments and download your agreement in the app." + sign()
-      };
-    },
-    declined: function (app) {
-      return {
-        kind: "declined",
-        subject: "Update on application " + app.ref,
-        message:
-          "Hello " + app.fullName + ",\n\n" +
-          "We are unable to approve application " + app.ref + " at this time.\n" +
-          (app.reviewNote ? "\nReason: " + app.reviewNote + "\n" : "") +
-          "\nPlease call us on " + B().phoneDisplay + " if you would like to discuss it." + sign()
-      };
-    },
-    payment: function (payment, loan) {
-      var f = Calc.loanFinance(loan);
-      return {
-        kind: "payment",
-        subject: "Payment received — " + U.money(payment.amount) + " (" + payment.ref + ")",
-        message:
-          "Hello " + payment.customerName + ",\n\n" +
-          "We have recorded your payment.\n\n" +
-          "Receipt: " + payment.ref + "\n" +
-          "Loan: " + payment.loanRef + "\n" +
-          "Amount: " + U.money(payment.amount) + "\n" +
-          "Method: " + payment.method + "\n" +
-          "Date: " + U.fmtDate(payment.date, "long") + "\n\n" +
-          "Total repayable: " + U.money(f.total) + "\n" +
-          "Paid so far: " + U.money(f.paid) + "\n" +
-          "Balance remaining: " + U.money(f.balance) + "\n" +
-          "Status: " + (payment.confirmed ? "Confirmed by the office" : "Awaiting office confirmation") + sign()
-      };
-    },
-    paymentConfirmed: function (payment, loan) {
-      var f = loan ? Calc.loanFinance(loan) : null;
-      return {
-        kind: "payment-confirmed",
-        subject: "Payment confirmed — " + U.money(payment.amount) + " (" + payment.ref + ")",
-        message:
-          "Hello " + payment.customerName + ",\n\n" +
-          "The office has confirmed your payment. Thank you.\n\n" +
-          "Receipt: " + payment.ref + "\n" +
-          "Loan: " + payment.loanRef + "\n" +
-          "Amount: " + U.money(payment.amount) + "\n" +
-          "Method: " + payment.method + "\n" +
-          "Date: " + U.fmtDate(payment.date, "long") + "\n\n" +
-          (f ? ("Total repayable: " + U.money(f.total) + "\n" +
-                "Paid so far: " + U.money(f.paid) + "\n" +
-                "Balance remaining: " + U.money(f.balance) + "\n") : "") +
-          "Status: Confirmed by the office" + sign()
-      };
-    },
-    paidOff: function (loan) {
-      return {
-        kind: "paid-off",
-        subject: "Loan " + loan.ref + " fully paid",
-        message:
-          "Hello " + loan.customerName + ",\n\n" +
-          "Your loan " + loan.ref + " is now fully settled — " + U.money(loan.total) + " received.\n\n" +
-          "Thank you for banking with " + B().legalName + ". You are welcome to apply again at any time." + sign()
-      };
-    },
-    reminder: function (loan) {
-      var f = Calc.loanFinance(loan);
-      return {
-        kind: "reminder",
-        subject: "Payment reminder — " + loan.ref,
-        message:
-          "Hello " + loan.customerName + ",\n\n" +
-          "A reminder about your loan " + loan.ref + ".\n\n" +
-          "Outstanding balance: " + U.money(f.balance) + "\n" +
-          "Due date: " + U.fmtDate(loan.dueDate, "long") + "\n" +
-          (f.daysLeft < 0 ? "This is " + Math.abs(f.daysLeft) + " day(s) overdue.\n" : f.daysLeft === 0 ? "This is due today.\n" : "That is " + f.daysLeft + " day(s) from today.\n") +
-          "\nYou can pay and see your balance in the app, or call " + B().phoneDisplay + "." + sign()
-      };
-    },
-    custom: function (user, subject, message) {
-      return { kind: "custom", subject: subject, message: "Hello " + user.fullName + ",\n\n" + message + sign() };
-    }
-  };
-
-  /** Convenience: send a template to a person. */
-  Mail.notify = function (templateName, person, a, b) {
-    try {
-      var tpl = Mail.templates[templateName];
-      if (!tpl || !person) return Promise.resolve({ skipped: "no-template" });
-      // welcome/custom take the person; the others take (record) or (record, person)
-      var built = tpl(a === undefined ? person : a, b === undefined ? person : b);
-      return Mail.send({
-        to: person.email || (a && a.email) || "",
-        name: person.fullName || person.customerName || "",
-        subject: built.subject,
-        message: built.message,
-        kind: built.kind,
-        ref: (a && (a.ref || a.loanRef)) || ""
-      });
-    } catch (e) {
-      // never fail silently — a broken template must show up in the Email log
-      log({ id: U.uid("mail"), to: (person && person.email) || "(none)", name: (person && person.fullName) || "",
-        subject: "Could not build email [" + templateName + "]", kind: "error", ref: "",
-        message: e.message, status: "failed", attempts: 0, at: new Date().toISOString(), error: e.message });
-      return Promise.resolve({ ok: false, error: e.message });
-    }
-  };
-
-  /** Fire-and-forget used by the app so email never blocks a screen. */
-  Mail.after = function (fn) {
-    setTimeout(function () { try { fn(); } catch (e) {} }, 800);
-  };
-
-  CI.Mail = Mail;
-})();
-
-
 /* ===== records.js ===== */
 /* ==========================================================================
    Records module — applications, approvals, payments, receipts
@@ -2681,16 +2315,6 @@ html, body { overflow-x: hidden; }
   var U = CI.U, Calc = CI.Calc, Store = CI.Store;
 
   var Loans = {};
-
-  /** Records may only know the email captured at application time. */
-  function objectWithEmail(person, email) {
-    if (!person) person = {};
-    if (person.email) return person;
-    var copy = {};
-    for (var k in person) if (Object.prototype.hasOwnProperty.call(person, k)) copy[k] = person[k];
-    copy.email = email || "";
-    return copy;
-  }
 
   /* ---------------- lookups ---------------- */
   Loans.forUser = function (userId) {
@@ -2788,17 +2412,9 @@ html, body { overflow-x: hidden; }
     if (CI.Backend.enabled()) {
       CI.Backend.submit("apply", {
         application: app,
-        user: { id: user.id, fullName: user.fullName, phone: user.phone, email: user.email }
+        user: { id: user.id, fullName: user.fullName, phone: user.phone }
       });
     }
-    // confirmation email with the tracking code
-    CI.Mail.notify("application", user, app).then(function (r) {
-      app.emailStatus = r && r.ok ? "sent" : (r && r.skipped ? "no-email" : "queued");
-      app.emailSentAt = new Date().toISOString();
-      app.updatedAt = new Date().toISOString();
-      Store.save();
-      if (CI.Backend.enabled()) CI.Backend.submit("application_update", { application: app });
-    });
     return app;
   };
 
@@ -2823,7 +2439,6 @@ html, body { overflow-x: hidden; }
       accessCode: app.accessCode,
       customerName: app.fullName,
       customerPhone: app.phone,
-      customerEmail: (user && user.email) || app.email || "",
       principal: app.amount,
       weeks: app.weeks,
       pct: app.pct,
@@ -2853,7 +2468,6 @@ html, body { overflow-x: hidden; }
     if (user) user.hasLoan = true;
 
     if (CI.Backend.enabled()) CI.Backend.submit("loan", { loan: loan, application: app }, { admin: true });
-    CI.Mail.notify("approved", objectWithEmail(user || app, loan.customerEmail), loan, app);
     return loan;
   };
 
@@ -2868,8 +2482,6 @@ html, body { overflow-x: hidden; }
     Store.log("Admin", "Declined application " + app.ref, reason || "");
     Store.notify(app.userId, "rejected", "Application update", "We could not approve application " + app.ref + " at this time. " + (reason ? "Reason: " + reason : "") + " Please call 0772742481 to discuss.", { ref: app.ref, severity: "warn" });
     if (CI.Backend.enabled()) CI.Backend.submit("application_update", { application: app });
-    var uRej = Store.state.users.find(function (u) { return u.id === app.userId; }) || app;
-    CI.Mail.notify("declined", objectWithEmail(uRej, app.email), app);
     return true;
   };
 
@@ -2901,7 +2513,6 @@ html, body { overflow-x: hidden; }
       loanId: loan.id,
       userId: loan.userId,
       customerName: loan.customerName,
-      customerEmail: loan.customerEmail || (Store.state.users.find(function (u) { return u.id === loan.userId; }) || {}).email || "",
       amount: amount,
       method: data.method || "Cash at office",
       note: data.note || "",
@@ -2930,8 +2541,6 @@ html, body { overflow-x: hidden; }
       Store.save();
     }
     if (CI.Backend.enabled()) CI.Backend.submit("payment", { payment: payment });
-    var uPay = Store.state.users.find(function (u) { return u.id === loan.userId; }) || loan;
-    CI.Mail.notify("payment", objectWithEmail(uPay, payment.customerEmail), payment, loan);
     return payment;
   };
 
@@ -2944,8 +2553,6 @@ html, body { overflow-x: hidden; }
     Store.log("Admin", "Confirmed payment " + p.ref, p.loanRef + " · " + U.money(p.amount));
     Store.notify(p.userId, "payment", "Payment confirmed", "Your payment of " + U.money(p.amount) + " (receipt " + p.ref + ") has been verified. Thank you.", { ref: p.loanRef });
     if (CI.Backend.enabled()) CI.Backend.submit("payment_update", { payment: p }, { admin: true });
-    var uConf = Store.state.users.find(function (u) { return u.id === p.userId; }) || p;
-    CI.Mail.notify("paymentConfirmed", objectWithEmail(uConf, p.customerEmail), p, Loans.get(p.loanRef));
     return true;
   };
 
@@ -3005,7 +2612,6 @@ html, body { overflow-x: hidden; }
 
   /* ---------------- icons ---------------- */
   var P = {
-    mail: '<rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 7 9 6 9-6"/>',
     home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
     cash: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5h.01M18 14.5h.01"/>',
     calc: '<rect x="4" y="2.5" width="16" height="19" rx="2.5"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>',
@@ -3135,7 +2741,6 @@ html, body { overflow-x: hidden; }
     { href: "#/admin/loans", icon: "cash", label: "Loans" },
     { href: "#/admin/clients", icon: "users", label: "Clients" },
     { href: "#/admin/payments", icon: "wallet", label: "Payments" },
-    { href: "#/admin/emails", icon: "mail", label: "Emails" },
     { href: "#/admin/reminders", icon: "bell", label: "Reminders" },
     { href: "#/admin/reports", icon: "chart", label: "Reports" },
     { href: "#/admin/settings", icon: "gear", label: "Settings" }
@@ -3242,7 +2847,6 @@ html, body { overflow-x: hidden; }
   /* ---------------- install (PWA) ---------------- */
   var installEvent = null;
   UI.isStandalone = function () {
-    if (!window.matchMedia) return window.navigator.standalone === true;
     return window.matchMedia("(display-mode: standalone)").matches ||
       window.matchMedia("(display-mode: fullscreen)").matches ||
       window.navigator.standalone === true;
@@ -3403,52 +3007,6 @@ html, body { overflow-x: hidden; }
   };
   UI.money = U.money;
 
-  /* ---------------- "database still uses the template key" helper ----------------
-     Shown wherever that error can surface (staff sign-in, Settings, Sync now).
-     One tap copies SQL that is valid to paste straight into Supabase. */
-  /* NOTE: deliberately does NOT contain the real password — this bundle is served
-     publicly from GitHub Pages. The user replaces the placeholder with their own. */
-  UI.TEMPLATE_KEY_SQL = [
-    "insert into private.app_config (key, value, updated_at)",
-    "values ('admin_key_hash', extensions.crypt('YOUR-STAFF-PASSWORD', extensions.gen_salt('bf', 10)), now())",
-    "on conflict (key) do update set value = excluded.value, updated_at = now();"
-  ].join("\n");
-
-  UI.templateKeyFixHTML = function (opts) {
-    opts = opts || {};
-    return '<div class="alert alert-warn mt-2" style="align-items:flex-start">' + UI.icon("alert") +
-      '<div style="min-width:0"><div class="small"><b>The office database still uses the published template key.</b> ' +
-      'Until it is changed, any stranger who reads the app’s public files could open your staff console.</div>' +
-      '<p class="tiny" style="margin:8px 0 6px">Open <b>Supabase → SQL Editor → New query</b>, replace <b>YOUR-STAFF-PASSWORD</b> with the password you want staff to type, press <b>Run</b>, then tap <b>Test</b> again. It works even if the key row was never created. (The password is never written into this app’s public files.)</p>' +
-      '<pre id="fixSql" style="white-space:pre-wrap;word-break:break-word;background:rgba(0,0,0,.28);padding:10px;border-radius:8px;font-size:11.5px;line-height:1.5;margin:0">' +
-        U.escape(UI.TEMPLATE_KEY_SQL) + '</pre>' +
-      '<div class="flex mt-2" style="flex-wrap:wrap;gap:6px">' +
-        '<button class="btn btn-outline btn-sm" id="copyFixSql" type="button">Copy this SQL</button>' +
-        '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="https://supabase.com/dashboard/project/vvrffehhofnvypujtyhn/sql/new">Open SQL Editor</a>' +
-      '</div></div></div>';
-  };
-
-  /* one delegated handler, so the button works on every screen */
-  document.addEventListener("click", function (e) {
-    var b = e.target && e.target.closest ? e.target.closest("#copyFixSql") : null;
-    if (!b) return;
-    e.preventDefault();
-    var sql = UI.TEMPLATE_KEY_SQL;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(sql).then(function () {
-        UI.toast("SQL copied — paste it in Supabase → SQL Editor.", "ok");
-      }).catch(function () { UI.toast("Select the SQL above and copy it manually.", "warn"); });
-    } else {
-      try {
-        var ta = document.createElement("textarea");
-        ta.value = sql; ta.style.position = "fixed"; ta.style.opacity = "0";
-        document.body.appendChild(ta); ta.select(); document.execCommand("copy");
-        document.body.removeChild(ta);
-        UI.toast("SQL copied — paste it in Supabase → SQL Editor.", "ok");
-      } catch (err) { UI.toast("Select the SQL above and copy it manually.", "warn"); }
-    }
-  });
-
   UI.escape = U.escape; // convenience alias
   CI.UI = UI;
 })();
@@ -3472,10 +3030,6 @@ html, body { overflow-x: hidden; }
       if (!data.fullName || data.fullName.trim().length < 3) return { ok: false, error: "Please enter your full name." };
       if (!U.validPhone(phone)) return { ok: false, error: "Enter a valid Zambian phone number, e.g. 0971234567." };
       if (!U.pinOk(data.pin)) return { ok: false, error: "Your PIN must be 4–6 digits." };
-      if (!data.email || !CI.Mail.validEmail(data.email)) return { ok: false, error: "Enter a valid email address — we send your confirmations there." };
-      if (Store.state.users.some(function (u) { return (u.email || "").toLowerCase() === String(data.email).toLowerCase(); })) {
-        return { ok: false, error: "That email address is already used by another account." };
-      }
       if (data.pin !== data.confirmPin) return { ok: false, error: "The two PINs do not match." };
       if (Store.state.users.some(function (u) { return U.normalisePhone(u.phone) === phone; })) {
         return { ok: false, error: "An account with this phone number already exists. Please sign in instead." };
@@ -3488,7 +3042,7 @@ html, body { overflow-x: hidden; }
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         nrc: "",
-        email: String(data.email).trim(),
+        email: "",
         address: "",
         dob: "",
         notifications: true
@@ -3497,13 +3051,6 @@ html, body { overflow-x: hidden; }
       Store.save();
       Store.log(user.fullName, "Created account", U.mask(phone, 4));
       CI.Session.set({ userId: user.id });
-      // confirmation email (never blocks sign-up)
-      CI.Mail.notify("welcome", user).then(function (r) {
-        user.emailStatus = r && r.ok ? "sent" : (r && r.skipped ? "no-email" : "queued");
-        user.emailSentAt = new Date().toISOString();
-        Store.save();
-        if (r && r.ok) UI.toast("A confirmation email was sent to " + user.email + ".", "ok", 6000);
-      });
       Store.notify(user.id, "welcome", "Welcome to Chileshe Loans", "You can now apply for a loan, track repayments and receive due-date reminders on this app.", { severity: "ok" });
       return { ok: true, user: user };
     },
@@ -3746,31 +3293,6 @@ html, body { overflow-x: hidden; }
         U.download("Receipt-" + payment.ref + ".html", "<!doctype html><meta charset='utf-8'><style>body{font-family:Georgia,serif;max-width:720px;margin:40px auto;color:#17231E;font-size:.9rem}.doc-head{display:flex;justify-content:space-between;border-bottom:3px double #999;padding-bottom:14px;margin-bottom:16px}.doc-brand{font-weight:800;color:#0B4F3C}.doc-brand small{display:block;font-size:.6rem;letter-spacing:.2em;font-family:Arial}.doc-title{text-align:right}.doc-title b{display:block;letter-spacing:.1em}.doc-title span{font-size:.75rem;color:#666}.doc-rows div{display:flex;justify-content:space-between;border-bottom:1px dotted #bbb;padding-bottom:4px;margin-bottom:8px}.doc-rows span:first-child{color:#666}.doc-sign{display:flex;gap:20px;margin-top:40px}.doc-sign div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:.72rem;color:#666}.doc-note{font-size:.7rem;color:#666;margin-top:18px}.doc-stamp{display:inline-block;border:2px solid #B88A20;color:#B88A20;font-weight:800;letter-spacing:.12em;font-size:.66rem;padding:5px 10px;transform:rotate(-4deg)}.alert{padding:10px;border-radius:8px;font-size:.8rem;margin-bottom:12px}.alert-ok{background:#e4f3ea;color:#1E7A4C}.alert-warn{background:#fdf3e1;color:#B7791F}</style>" + Client.receiptHTML(payment, loan));
       }
     });
-  };
-
-  /** Printable statement used by staff (all transactions for one client). */
-  Client.statementHTML = function (c, rows) {
-    var B = CI.Config.business;
-    return '<div class="doc-head"><div class="doc-brand">' + B.name + '<small>' + B.tagline + '</small></div>' +
-      '<div class="doc-title"><b>CLIENT STATEMENT</b><span>' + U.fmtDate(new Date().toISOString(), "long") + '</span></div></div>' +
-      '<div class="doc-rows"><div><span>Client</span><b>' + U.escape(c.fullName) + '</b></div>' +
-      '<div><span>Phone</span><b>' + U.escape(c.phone) + '</b></div>' +
-      (c.email ? '<div><span>Email</span><b>' + U.escape(c.email) + '</b></div>' : "") +
-      '<div><span>NRC</span><b>' + U.escape(c.nrc || "—") + '</b></div>' +
-      '<div><span>Outstanding balance</span><b>' + U.money(c.outstanding) + '</b></div>' +
-      '<div><span>Paid to date</span><b>' + U.money(c.paidTotal) + '</b></div></div>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:12px"><thead><tr>' +
-      ['Date', 'Type', 'Reference', 'Details', 'Amount', 'Status'].map(function (h) {
-        return '<th style="text-align:left;border-bottom:1px solid #999;padding:5px 4px">' + h + '</th>';
-      }).join("") + '</tr></thead><tbody>' +
-      rows.map(function (r) {
-        return '<tr><td style="padding:4px">' + U.fmtDate(r.when) + '</td><td style="padding:4px">' + r.kind + '</td>' +
-          '<td style="padding:4px">' + U.escape(r.ref) + '</td><td style="padding:4px">' + U.escape(r.detail) + '</td>' +
-          '<td style="padding:4px;text-align:right">' + (r.amount != null ? U.money(r.amount) : "—") + '</td>' +
-          '<td style="padding:4px">' + r.status + '</td></tr>';
-      }).join("") + '</tbody></table>' +
-      '<p class="doc-note">This statement is generated from the office records. Payments marked pending are awaiting verification. ' +
-      'Questions: ' + B.phoneDisplay + '.</p>';
   };
 
   /* ---------------- payment modal ---------------- */
@@ -4429,7 +3951,6 @@ html, body { overflow-x: hidden; }
             '<div class="brand-coin" style="margin:0 auto 14px;width:60px;height:60px;font-size:1.9rem">✓</div>' +
             "<h3 style='margin-bottom:4px'>Thank you, " + U.escape(user.fullName.split(" ")[0]) + "!</h3>" +
             '<p class="muted">Your application <b>' + application.ref + "</b> is now with our team. We review applications during business hours.</p>" +
-            (user.email ? '<p class="tiny" style="color:var(--ok)">A confirmation has been emailed to <b>' + U.escape(user.email) + "</b>.</p>" : "") +
             '<div style="background:var(--emerald-soft);border:1px dashed var(--emerald-3);border-radius:14px;padding:16px;margin:16px 0">' +
             '<div class="tiny muted" style="letter-spacing:.14em">YOUR TRACKING CODE</div>' +
             '<div style="font-family:var(--serif);font-size:1.5rem;font-weight:800;letter-spacing:.05em;color:var(--emerald-3)" id="newCode">' + application.accessCode + "</div>" +
@@ -4593,7 +4114,6 @@ html, body { overflow-x: hidden; }
       '<form id="regForm" novalidate>' +
       '<div class="field"><label for="rName">Full name</label><input type="text" id="rName" maxlength="80" placeholder="e.g. Mwila Chileshe" autocomplete="name"></div>' +
       '<div class="field mt-2"><label for="rPhone">Phone number</label><input type="tel" id="rPhone" placeholder="0971234567" autocomplete="tel"><div class="hint">We use this to identify you and send reminders.</div></div>' +
-      '<div class="field mt-2"><label for="rEmail">Email address <span class="req">*</span></label><input type="email" id="rEmail" placeholder="you@example.com" autocomplete="email"><div class="hint">Your confirmation and receipts are emailed here.</div></div>' +
       '<div class="form-grid mt-2" style="gap:12px">' +
       '<div class="field"><label for="rPin">Create PIN (4–6 digits)</label><input type="password" id="rPin" inputmode="numeric" maxlength="6" placeholder="••••"></div>' +
       '<div class="field"><label for="rPin2">Confirm PIN</label><input type="password" id="rPin2" inputmode="numeric" maxlength="6" placeholder="••••"></div>' +
@@ -4614,7 +4134,6 @@ html, body { overflow-x: hidden; }
       var r = CI.Auth.register({
         fullName: document.getElementById("rName").value,
         phone: document.getElementById("rPhone").value,
-        email: document.getElementById("rEmail").value,
         pin: document.getElementById("rPin").value,
         confirmPin: document.getElementById("rPin2").value
       });
@@ -5064,12 +4583,6 @@ html, body { overflow-x: hidden; }
       "<h3 style='margin-bottom:2px'>" + U.escape(user.fullName) + "</h3>" +
       '<div class="small muted">' + U.escape(user.phone) + "</div>" +
       '<div class="tiny muted mt-1">Member since ' + U.fmtDate(user.createdAt) + "</div></div>" +
-      '<div class="card card-pad mt-2"><h4 style="margin-top:0">Email confirmations</h4>' +
-      '<p class="small" style="margin:0 0 8px">' + (user.email ? "We send your confirmations and receipts to <b>" + U.escape(user.email) + "</b>." : "Add an email address so we can send confirmations and receipts.") + "</p>" +
-      '<div class="field"><label for="pEmailQuick">Email address</label><input type="email" id="pEmailQuick" value="' + U.escape(user.email || "") + '" placeholder="you@example.com"></div>' +
-      '<button class="btn btn-outline btn-block mt-2" id="pEmailSave">Save email</button>' +
-      (CI.Mail.enabled() ? '<p class="tiny" style="margin:8px 0 0;color:var(--ok)">● Email confirmations are on</p>' : '<p class="tiny muted" style="margin:8px 0 0">● Email confirmations are not switched on by the office yet</p>') +
-      "</div>" +
       '<div class="card card-pad mt-2"><h4 style="margin-top:0">App &amp; data</h4>' +
       '<div class="sync-status" id="profSyncStatus"></div>' +
       '<button class="btn btn-outline btn-block" id="profSync" style="margin-bottom:8px">' + UI.icon("refresh") + " Sync now</button>" +
@@ -5116,17 +4629,6 @@ html, body { overflow-x: hidden; }
       document.getElementById("pinNew").value = "";
       document.getElementById("pinNew2").value = "";
       UI.toast("PIN updated successfully.", "ok");
-    };
-
-    var emailSave = document.getElementById("pEmailSave");
-    if (emailSave) emailSave.onclick = function () {
-      var v = document.getElementById("pEmailQuick").value.trim();
-      if (!CI.Mail.validEmail(v)) return UI.toast("Enter a valid email address.", "warn");
-      user.email = v;
-      user.updatedAt = new Date().toISOString();
-      Store.save();
-      UI.toast("Email saved. Confirmations will go to " + v + ".", "ok");
-      CI.App.render();
     };
 
     (function renderSyncStatus() {
@@ -5283,7 +4785,6 @@ html, body { overflow-x: hidden; }
           '<button type="button" class="btn btn-ghost btn-block mt-1" id="sDemo">Explore with sample data</button></form>'
         : '<form id="loginForm" novalidate><div class="field"><label for="aPin">Staff password</label><input type="password" id="aPin" inputmode="numeric" maxlength="12" placeholder="••••••" autocomplete="current-password" autofocus></div>' +
           '<div class="err" id="aErr"></div>' +
-          '<div id="authFix" style="display:none"></div>' +
           '<button class="btn btn-primary btn-block btn-lg mt-2" type="submit" id="aGo">Sign in &amp; load office records</button></form>' +
           '<p class="tiny muted center mt-2" id="aHint">' + (cloud
             ? "This phone will download every client record after sign-in."
@@ -5330,16 +4831,8 @@ html, body { overflow-x: hidden; }
     var go = document.getElementById("aGo");
 
     function fail(msg) {
-      var isTemplate = /template admin key|CHANGE_ME_ADMIN_KEY/i.test(String(msg || ""));
-      err.textContent = isTemplate
-        ? "This phone reached the office database, but the database still uses the published template key, so it refused the sign-in. One SQL line fixes it — copy it below, run it in Supabase, then sign in again."
-        : msg;
+      err.textContent = msg;
       err.style.display = "block";
-      var box = document.getElementById("authFix");
-      if (box) {
-        box.innerHTML = isTemplate ? UI.templateKeyFixHTML() : "";
-        box.style.display = isTemplate ? "block" : "none";
-      }
       go.disabled = false;
       go.textContent = "Sign in & load office records";
     }
@@ -5498,77 +4991,6 @@ html, body { overflow-x: hidden; }
   /* ---------------------------------------------------------------
      SHELL
      --------------------------------------------------------------- */
-  /**
-   * Every client the office knows about, whether they used this phone or not.
-   * A client who registers and applies on their own phone only ever sends the
-   * application — so the profile is rebuilt from the application/loan record.
-   */
-  function allClients() {
-    var out = [], seen = {};
-    var push = function (c) {
-      if (!c || !c.id) return;
-      if (seen[c.id]) {
-        var ex = seen[c.id];
-        ex.loans = ex.loans.concat(c.loans || []);
-        return;
-      }
-      c.loans = c.loans || [];
-      seen[c.id] = c;
-      out.push(c);
-    };
-
-    Store.state.users.forEach(function (u) {
-      push({ id: u.id, fullName: u.fullName, phone: u.phone, email: u.email || "", nrc: u.nrc || "",
-        address: u.address || "", dob: u.dob || "", createdAt: u.createdAt, userRec: u, loans: [] });
-    });
-
-    // anyone who applied but whose account record never reached this phone
-    Store.state.applications.forEach(function (a) {
-      if (!a.userId || seen[a.userId]) return;
-      push({ id: a.userId, fullName: a.fullName, phone: a.phone, email: a.email || "", nrc: a.nrc || "",
-        address: a.address || "", dob: a.dob || "", createdAt: a.createdAt, fromApplication: a, loans: [] });
-    });
-
-    Store.state.loans.forEach(function (l) {
-      if (!l.userId || seen[l.userId]) return;
-      push({ id: l.userId, fullName: l.customerName, phone: l.customerPhone, email: l.customerEmail || "",
-        nrc: "", address: "", dob: "", createdAt: l.startDate, loans: [] });
-    });
-
-    out.forEach(function (c) {
-      c.loans = Loans.forUser(c.id);
-      c.applications = Loans.appsForUser(c.id);
-      c.payments = Store.state.payments.filter(function (p) { return p.userId === c.id; });
-      c.outstanding = c.loans.reduce(function (sum, l) {
-        var f = Calc.loanFinance(l);
-        return l.status === "cancelled" ? sum : sum + f.balance;
-      }, 0);
-      c.paidTotal = c.payments.reduce(function (sum, p) { return sum + Number(p.amount || 0); }, 0);
-      c.overdue = c.loans.some(function (l) { var f = Calc.loanFinance(l); return f.balance > 0.009 && f.daysLeft < 0; });
-    });
-    out.sort(function (x, y) { return new Date(y.createdAt || 0) - new Date(x.createdAt || 0); });
-    return out;
-  }
-  Admin.allClients = allClients;
-
-  /** One client's statement: every application, loan and payment in one list. */
-  function clientStatement(c) {
-    var rows = [];
-    c.applications.forEach(function (a) {
-      rows.push({ when: a.createdAt, kind: "Application", ref: a.ref, detail: U.money(a.amount) + " · " + a.weeks + " wk", status: a.status, amount: null });
-    });
-    c.loans.forEach(function (l) {
-      var f = Calc.loanFinance(l);
-      rows.push({ when: l.startDate, kind: "Loan approved", ref: l.ref, detail: "Total " + U.money(l.total), status: f.status, amount: null });
-    });
-    c.payments.forEach(function (p) {
-      rows.push({ when: p.date, kind: p.confirmed ? "Payment" : "Payment (unconfirmed)", ref: p.ref, detail: p.method + " · " + p.loanRef, status: p.confirmed ? "confirmed" : "pending", amount: p.amount });
-    });
-    rows.sort(function (a, b) { return new Date(b.when) - new Date(a.when); });
-    return rows;
-  }
-  Admin.clientStatement = clientStatement;
-
   Admin.render = function (activeKey, content) {
     if (CI.UI && CI.UI.hideInstallBanner) CI.UI.hideInstallBanner();
     var nav = UI.adminNav;
@@ -6099,32 +5521,30 @@ html, body { overflow-x: hidden; }
      CLIENTS
      --------------------------------------------------------------- */
   Admin.clients = function () {
-    var clients = allClients();
-    var rows = clients.map(function (c) {
-      return "<tr data-status='" + (c.overdue ? "overdue" : "ok") + "' data-search='" + U.escape((c.fullName + " " + c.phone + " " + (c.nrc || "") + " " + (c.email || "")).toLowerCase()) + "'>" +
-        "<td><div class='flex'><span class='avatar-btn' style='width:32px;height:32px;font-size:.66rem;cursor:default'>" + U.initials(c.fullName) + "</span>" +
-        "<div><div class='cell-main'>" + U.escape(c.fullName) + "</div><div class='cell-sub'>" + U.escape(c.phone) + "</div></div></div></td>" +
-        "<td>" + U.escape(c.email || "—") + (c.emailStatus === "sent" || (c.fromApplication && c.fromApplication.emailStatus === "sent") ? '<div class="cell-sub" style="color:var(--ok)">✓ confirmed</div>' : "") + "</td>" +
-        "<td>" + U.escape(c.nrc || "—") + "</td>" +
-        "<td>" + c.loans.length + "</td>" +
-        "<td class='mono'>" + U.money(c.outstanding) + "</td>" +
-        "<td class='mono'>" + U.money(c.paidTotal) + "</td>" +
-        "<td>" + (c.overdue ? '<span class="pill pill-danger">Overdue</span>' : c.outstanding > 0 ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-muted">Clear</span>') + "</td>" +
-        "<td class='t-right nowrap'><button class='btn btn-sm btn-primary' data-client='" + c.id + "'>Open</button></td></tr>";
+    var users = Store.state.users;
+    var rows = users.map(function (u) {
+      var loans = Loans.forUser(u.id);
+      var outstanding = loans.reduce(function (s, l) {
+        var f = Calc.loanFinance(l);
+        return l.status === "cancelled" ? s : s + f.balance;
+      }, 0);
+      var hasOverdue = loans.some(function (l) { var f = Calc.loanFinance(l); return f.balance > 0.009 && f.daysLeft < 0; });
+      return "<tr data-status='" + (hasOverdue ? "overdue" : "ok") + "' data-search='" + U.escape((u.fullName + " " + u.phone + " " + (u.nrc || "")).toLowerCase()) + "'>" +
+        "<td><div class='flex'><span class='avatar-btn' style='width:32px;height:32px;font-size:.66rem;cursor:default'>" + U.initials(u.fullName) + "</span>" +
+        "<div><div class='cell-main'>" + U.escape(u.fullName) + "</div><div class='cell-sub'>" + U.escape(u.phone) + "</div></div></div></td>" +
+        "<td>" + U.escape(u.nrc || "—") + "</td>" +
+        "<td>" + loans.length + "</td>" +
+        "<td class='mono'>" + U.money(outstanding) + "</td>" +
+        "<td>" + (hasOverdue ? '<span class="pill pill-danger">Overdue</span>' : outstanding > 0 ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-muted">Clear</span>') + "</td>" +
+        "<td>" + U.fmtDate(u.createdAt) + "</td>" +
+        "<td class='t-right'><button class='btn btn-sm btn-outline' data-client='" + u.id + "'>Open</button></td></tr>";
     }).join("");
 
-    var totals = clients.reduce(function (a, c) { a.out += c.outstanding; a.paid += c.paidTotal; return a; }, { out: 0, paid: 0 });
-    var html = adminHead("Clients", clients.length + " clients · every application, loan and payment in one place.",
+    var html = adminHead("Clients", users.length + " registered clients.",
       '<button class="btn btn-outline btn-sm" id="expClients">' + UI.icon("download") + " Export CSV</button>") +
-      '<div class="kpis">' +
-      '<div class="card kpi accent"><div class="k-label">Clients</div><div class="k-value">' + clients.length + '</div><div class="k-sub">All devices</div></div>' +
-      '<div class="card kpi"><div class="k-label">Outstanding</div><div class="k-value">' + U.money0(totals.out) + '</div><div class="k-sub">Across the book</div></div>' +
-      '<div class="card kpi"><div class="k-label">Collected</div><div class="k-value">' + U.money0(totals.paid) + '</div><div class="k-sub">All payments</div></div>' +
-      '<div class="card kpi"><div class="k-label">Overdue</div><div class="k-value">' + clients.filter(function (c) { return c.overdue; }).length + '</div><div class="k-sub">Need follow-up</div></div>' +
-      "</div>" +
-      '<div class="toolbar mt-2">' + searchBox("clientSearch", "Search name, phone, NRC or email…") + "</div>" +
-      '<div class="table-wrap mt-2"><table><thead><tr><th>Client</th><th>Email</th><th>NRC</th><th>Loans</th><th class="t-right">Outstanding</th><th class="t-right">Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
-      rows + noRows("clientTableEmpty", 8) + "</tbody></table></div>";
+      '<div class="toolbar">' + searchBox("clientSearch", "Search name, phone or NRC…") + "</div>" +
+      '<div class="table-wrap mt-2"><table><thead><tr><th>Client</th><th>NRC</th><th>Loans</th><th>Outstanding</th><th>Status</th><th>Joined</th><th class="t-right"></th></tr></thead><tbody>' +
+      rows + noRows("clientTableEmpty", 7) + "</tbody></table></div>";
 
     Admin.render("#/admin/clients", html);
     (function () {
@@ -6145,221 +5565,49 @@ html, body { overflow-x: hidden; }
   };
 
   Admin.openClient = function (id) {
-    var c = allClients().filter(function (x) { return x.id === id; })[0];
-    if (!c) return UI.toast("Client not found on this device yet — tap Sync now.", "warn");
-    var u = c.userRec || c.fromApplication || {};
-    var rows = clientStatement(c);
-    var app0 = c.applications[0];
-    var f0 = c.loans[0] ? Calc.loanFinance(c.loans[0]) : null;
-
+    var u = Store.state.users.find(function (x) { return x.id === id; });
+    if (!u) return;
+    var loans = Loans.forUser(id);
+    var apps = Loans.appsForUser(id);
+    var out = loans.reduce(function (s, l) { var f = Calc.loanFinance(l); return l.status === "cancelled" ? s : s + f.balance; }, 0);
+    var lastApp = apps[0];
     var body =
-      '<div class="flex" style="gap:14px;align-items:center"><span class="avatar-btn" style="width:56px;height:56px;font-size:1.1rem;cursor:default">' + U.initials(c.fullName) + "</span>" +
-      "<div><h3 style='margin:0'>" + U.escape(c.fullName) + "</h3><div class='small muted'>" + U.escape(c.phone) +
-      (c.email ? " · " + U.escape(c.email) : "") + " · joined " + U.fmtDate(c.createdAt) + "</div></div></div>" +
-      (c.email ? '<p class="tiny" style="margin:8px 0 0;color:' + ((u.emailStatus || (app0 && app0.emailStatus)) === "sent" ? "var(--ok)" : "var(--muted)") + '">' +
-        ((u.emailStatus || (app0 && app0.emailStatus)) === "sent" ? "✓ Confirmation email sent to " + U.escape(c.email) : "Email on file: " + U.escape(c.email)) + "</p>" : "") +
+      '<div class="flex" style="gap:14px;align-items:center"><span class="avatar-btn" style="width:56px;height:56px;font-size:1.1rem;cursor:default">' + U.initials(u.fullName) + "</span>" +
+      "<div><h3 style='margin:0'>" + U.escape(u.fullName) + "</h3><div class='small muted'>" + U.escape(u.phone) + " · joined " + U.fmtDate(u.createdAt) + "</div></div></div>" +
       '<div class="kpis mt-2" style="grid-template-columns:1fr 1fr">' +
-      '<div class="card kpi" style="padding:14px"><div class="k-label">Outstanding</div><div class="k-value" style="font-size:1.3rem">' + U.money(c.outstanding) + "</div></div>" +
-      '<div class="card kpi" style="padding:14px"><div class="k-label">Paid to date</div><div class="k-value" style="font-size:1.3rem">' + U.money(c.paidTotal) + "</div></div>" +
+      '<div class="card kpi" style="padding:14px"><div class="k-label">Outstanding</div><div class="k-value" style="font-size:1.3rem">' + U.money(out) + "</div></div>" +
+      '<div class="card kpi" style="padding:14px"><div class="k-label">Loans taken</div><div class="k-value" style="font-size:1.3rem">' + loans.length + "</div></div>" +
       "</div>" +
       '<div class="mini-rows mt-2">' +
-      '<div class="mr"><span>NRC</span><b>' + U.escape(c.nrc || (app0 ? app0.nrc : "—")) + "</b></div>" +
-      (c.dob ? '<div class="mr"><span>DOB</span><b>' + U.fmtDate(c.dob) + "</b></div>" : "") +
-      '<div class="mr"><span>Address</span><b>' + U.escape(c.address || (app0 ? app0.address : "—")) + "</b></div>" +
-      (app0 && app0.employment ? '<div class="mr"><span>Employment</span><b>' + U.escape(app0.employment) + "</b></div>" : "") +
-      (app0 && app0.income ? '<div class="mr"><span>Monthly income</span><b>' + U.money0(app0.income) + "</b></div>" : "") +
-      (f0 ? '<div class="mr"><span>Next due</span><b>' + U.fmtDate(c.loans[0].dueDate) + " · " + U.money(f0.balance) + "</b></div>" : "") +
+      '<div class="mr"><span>NRC</span><b>' + U.escape(u.nrc || (lastApp ? lastApp.nrc : "—")) + "</b></div>" +
+      (u.dob ? '<div class="mr"><span>DOB</span><b>' + U.fmtDate(u.dob) + "</b></div>" : "") +
+      (u.email ? '<div class="mr"><span>Email</span><b>' + U.escape(u.email) + "</b></div>" : "") +
+      '<div class="mr"><span>Address</span><b>' + U.escape(u.address || (lastApp ? lastApp.address : "—")) + "</b></div>" +
+      (lastApp ? '<div class="mr"><span>Employment</span><b>' + U.escape(lastApp.employment || "—") + "</b></div>" +
+        '<div class="mr"><span>Monthly income</span><b>' + U.money0(lastApp.income) + "</b></div>" : "") +
       "</div>" +
       '<div class="flex mt-2" style="flex-wrap:wrap">' +
-      '<a class="btn btn-sm btn-primary" href="tel:' + U.escape(c.phone) + '">' + UI.icon("phone") + " Call</a>" +
-      '<a class="btn btn-sm btn-outline" href="https://wa.me/' + U.toWa(c.phone) + '" target="_blank" rel="noopener">' + UI.icon("wa") + " WhatsApp</a>" +
-      (c.email ? '<button class="btn btn-sm btn-outline" id="clEmail">' + UI.icon("mail") + " Email</button>" : "") +
-      '<button class="btn btn-sm btn-outline" id="clStatement">' + UI.icon("file") + " Statement</button>" +
-      "</div>" +
-
-      "<h4 class='mt-3'>Transactions</h4>" +
-      (rows.length ? '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Details</th><th class="t-right">Amount</th><th>Status</th></tr></thead><tbody>' +
-        rows.map(function (r) {
-          return "<tr><td class='nowrap'>" + U.fmtDate(r.when) + "</td><td>" + U.escape(r.kind) + "</td><td class='mono'>" + U.escape(r.ref) + "</td><td>" + U.escape(r.detail) + "</td>" +
-            "<td class='mono t-right'>" + (r.amount != null ? U.money(r.amount) : "—") + "</td><td>" + UI.pill(r.status === "confirmed" ? "ok" : r.status === "pending" ? "warn" : r.status) + "</td></tr>";
-        }).join("") + "</tbody></table></div>"
-        : '<p class="small muted">No transactions yet.</p>') +
-
+      '<a class="btn btn-sm btn-primary" href="tel:' + U.escape(u.phone) + '">' + UI.icon("phone") + " Call</a>" +
+      '<a class="btn btn-sm btn-outline" href="https://wa.me/' + U.toWa(u.phone) + '" target="_blank" rel="noopener">' + UI.icon("wa") + " WhatsApp</a></div>" +
       "<h4 class='mt-3'>Loans</h4>" +
-      (c.loans.length ? c.loans.map(function (l) {
+      (loans.length ? loans.map(function (l) {
         var f = Calc.loanFinance(l);
         return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("cash") + '</span><span class="di-name">' + l.ref + " · " + U.money(l.principal) + '<div class="tiny muted">Balance ' + U.money(f.balance) + " · due " + U.fmtDate(l.dueDate) + "</div></span>" + UI.pill(f.status) +
           '<button class="btn btn-sm btn-outline" data-clientloan="' + l.ref + '">Open</button></div>';
       }).join("") : '<p class="small muted">No loans.</p>') +
-
-      "<h4 class='mt-3'>Applications &amp; documents</h4>" +
-      (c.applications.length ? c.applications.map(function (a) {
-        var docs = Object.keys(a.documents || {});
-        return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("file") + '</span><span class="di-name">' + a.ref + " · " + U.money(a.amount) +
-          '<div class="tiny muted">' + U.fmtDate(a.createdAt) + " · " + a.weeks + " wk · " + docs.length + " document" + (docs.length === 1 ? "" : "s") + "</div></span>" + UI.pill(a.status) +
+      "<h4 class='mt-3'>Applications</h4>" +
+      (apps.length ? apps.map(function (a) {
+        return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("file") + '</span><span class="di-name">' + a.ref + " · " + U.money(a.amount) + '<div class="tiny muted">' + U.fmtDate(a.createdAt) + " · " + a.weeks + " wk</div></span>" + UI.pill(a.status) +
           '<button class="btn btn-sm btn-outline" data-clientapp="' + a.ref + '">Open</button></div>';
       }).join("") : '<p class="small muted">No applications.</p>');
-
     Admin.openPanel("Client", body, '<button class="btn btn-ghost" onclick="CI.Admin.closePanel()">Close</button>');
     document.querySelectorAll("[data-clientloan]").forEach(function (b) { b.onclick = function () { Admin.openLoan(b.getAttribute("data-clientloan")); }; });
     document.querySelectorAll("[data-clientapp]").forEach(function (b) { b.onclick = function () { Admin.openApplication(b.getAttribute("data-clientapp")); }; });
-
-    var mailBtn = document.getElementById("clEmail");
-    if (mailBtn) mailBtn.onclick = function () {
-      UI.openModal("Email " + U.escape(c.fullName),
-        '<div class="field"><label for="clMailSubject">Subject</label><input type="text" id="clMailSubject" value="' + U.escape("CHILESHE INNOVATIONS — your loan account") + '"></div>' +
-        '<div class="field mt-2"><label for="clMailBody">Message</label><textarea id="clMailBody" rows="7">Hello ' + U.escape(c.fullName.split(" ")[0]) + ',\n\n' +
-        (c.outstanding > 0 ? "Your outstanding balance is " + U.money(c.outstanding) + "." : "Your account is up to date.") + '\n\n' +
-        'Call ' + CI.Config.business.phoneDisplay + ' if you have any questions.</textarea></div>' +
-        '<p class="tiny muted">Sent to ' + U.escape(c.email) + ' from the office email account.</p>',
-        '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="clMailGo">' + UI.icon("mail") + " Send email</button>");
-      document.getElementById("clMailGo").onclick = function () {
-        var subject = document.getElementById("clMailSubject").value;
-        var message = document.getElementById("clMailBody").value;
-        var tpl = CI.Mail.templates.custom({ fullName: c.fullName }, subject, message);
-        CI.Mail.send({ to: c.email, name: c.fullName, subject: tpl.subject, message: tpl.message, kind: "custom", ref: c.id }).then(function (r) {
-          UI.closeModal();
-          if (r && r.ok) UI.toast("Email sent to " + c.email + ".", "ok");
-          else UI.toast("Email queued — " + (r && r.error ? r.error : "will retry"), "warn", 6000);
-          Admin.openClient(id);
-        });
-      };
-    };
-
-    var stBtn = document.getElementById("clStatement");
-    if (stBtn) stBtn.onclick = function () {
-      var html = CI.Client.statementHTML(c, rows);
-      UI.showDoc("Statement — " + c.fullName, html, {
-        download: function () { U.download("Statement-" + c.fullName.replace(/\s+/g, "-") + ".html", "<!doctype html><meta charset='utf-8'>" + html); },
-        waText: "STATEMENT — " + CI.Config.business.legalName + "\n" + c.fullName + " · " + c.phone + "\n" +
-          "Outstanding: " + U.money(c.outstanding) + "\nPaid to date: " + U.money(c.paidTotal) + "\n" +
-          rows.slice(0, 10).map(function (r) { return U.fmtDate(r.when) + "  " + r.kind + "  " + (r.amount != null ? U.money(r.amount) : r.ref); }).join("\n"),
-        waTo: U.toWa(c.phone)
-      });
-    };
   };
 
   /* ---------------------------------------------------------------
      PAYMENTS
      --------------------------------------------------------------- */
-  /* ---------------------------------------------------------------
-     EMAILS — every confirmation the app has sent
-     --------------------------------------------------------------- */
-  Admin.emails = function () {
-    var mails = CI.Mail.log().slice();
-    // A client's phone sends its own confirmations, so this device does not
-    // have those log rows — rebuild them from the synced application records.
-    var known = {};
-    mails.forEach(function (m) { if (m.ref) known[m.ref] = true; });
-    Store.state.applications.forEach(function (a) {
-      if (!a.emailStatus || known[a.ref] || !a.email) return;
-      mails.push({
-        id: "derived-" + a.ref,
-        to: a.email, name: a.fullName,
-        subject: "Application received — " + a.ref,
-        kind: "application", ref: a.ref,
-        message: "Sent from the client's own phone. Status: " + a.emailStatus,
-        status: a.emailStatus === "sent" ? "sent" : "queued",
-        attempts: 1, at: a.emailSentAt || a.createdAt, derived: true
-      });
-    });
-    mails.sort(function (x, y) { return new Date(y.at || 0) - new Date(x.at || 0); });
-    var cfg = CI.Mail.config();
-    var sent = mails.filter(function (m) { return m.status === "sent"; }).length;
-    var queued = mails.filter(function (m) { return m.status === "queued"; }).length;
-
-    var rows = mails.map(function (m) {
-      return "<tr data-status='" + (m.status === "sent" ? "sent" : "queued") + "' data-search='" + U.escape((m.to + " " + m.name + " " + m.subject).toLowerCase()) + "'>" +
-        "<td class='nowrap'>" + U.fmtDateTime(m.at) + "</td>" +
-        "<td>" + U.escape(m.name || "—") + "<div class='cell-sub'>" + U.escape(m.to) + "</div></td>" +
-        "<td>" + U.escape(m.subject) + "<div class='cell-sub'>" + U.escape(m.kind) + (m.ref ? " · " + U.escape(m.ref) : "") + "</div></td>" +
-        "<td>" + (m.status === "sent" ? '<span class="pill pill-ok">Sent</span>' : '<span class="pill pill-warn">Queued</span>') +
-        (m.derived ? "<div class='cell-sub'>from client phone</div>" : "") +
-        (m.error ? "<div class='cell-sub red'>" + U.escape(m.error) + "</div>" : "") + "</td>" +
-        "<td class='t-right nowrap'><button class='btn btn-sm btn-outline' data-mailview='" + m.id + "'>View</button> " +
-        (m.status === "queued" ? "<button class='btn btn-sm btn-primary' data-mailretry='" + m.id + "'>Retry</button>" : "") + "</td></tr>";
-    }).join("");
-
-    var html = adminHead("Emails", "Every confirmation sent to clients — registration, approval, receipts and reminders.",
-      '<button class="btn btn-outline btn-sm" id="mailTest">' + UI.icon("mail") + " Send test email</button>" +
-      '<button class="btn btn-primary btn-sm" id="mailFlush">' + UI.icon("refresh") + " Retry queued</button>") +
-      (CI.Mail.enabled()
-        ? '<div class="alert alert-ok">' + UI.icon("check") + "<div><b>Email is on.</b> Using " + U.escape(cfg.provider === "emailjs" ? "EmailJS" : "webhook") +
-          ". Confirmations go to the client's own email address.</div></div>"
-        : '<div class="alert alert-warn">' + UI.icon("alert") + "<div><b>Email is off.</b> Clients are not receiving confirmations yet. " +
-          'Add your EmailJS Service ID, Template ID and Public key in <a href="#/admin/settings">Settings → Email</a>. ' +
-          "Every message is still recorded here and will be sent once email is switched on.</div></div>") +
-      '<div class="kpis">' +
-      '<div class="card kpi accent"><div class="k-label">Sent</div><div class="k-value">' + sent + '</div><div class="k-sub">Confirmations delivered</div></div>' +
-      '<div class="card kpi warn"><div class="k-label">Queued</div><div class="k-value">' + queued + '</div><div class="k-sub">Will retry automatically</div></div>' +
-      '<div class="card kpi"><div class="k-label">Total</div><div class="k-value">' + mails.length + '</div><div class="k-sub">Last 200</div></div>' +
-      "</div>" +
-      '<div class="toolbar mt-2">' + searchBox("mailSearch", "Search email, name or subject…") + "</div>" +
-      statusChips("mailStatus", "all", [["all", "All"], ["sent", "Sent"], ["queued", "Queued"]]) +
-      '<div class="table-wrap mt-2"><table><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th><th></th></tr></thead><tbody>' +
-      rows + noRows("mailTableEmpty", 5) + "</tbody></table></div>";
-
-    Admin.render("#/admin/emails", html);
-
-    (function () {
-      var tbody = document.querySelector("#mailTableEmpty").closest("tbody");
-      var search = document.getElementById("mailSearch");
-      function apply() {
-        var q = (search.value || "").toLowerCase();
-        var chip = document.querySelector('[data-chips="mailStatus"] button.active');
-        var status = chip ? chip.getAttribute("data-filter") : "all";
-        var visible = 0;
-        tbody.querySelectorAll("tr[data-status]").forEach(function (tr) {
-          var show = (status === "all" || tr.getAttribute("data-status") === status) && (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
-          tr.style.display = show ? "" : "none"; if (show) visible++;
-        });
-        document.getElementById("mailTableEmpty").style.display = visible ? "none" : "";
-      }
-      search.addEventListener("input", apply);
-      Array.prototype.forEach.call(document.querySelectorAll('[data-chips="mailStatus"] button'), function (b) {
-        b.addEventListener("click", function () { Array.prototype.forEach.call(document.querySelectorAll('[data-chips="mailStatus"] button'), function (x) { x.classList.toggle("active", x === b); }); apply(); });
-      });
-    })();
-
-    document.querySelectorAll("[data-mailview]").forEach(function (b) {
-      b.onclick = function () {
-        var id = b.getAttribute("data-mailview");
-        var m = CI.Mail.log().filter(function (x) { return x.id === id; })[0];
-        if (!m && id.indexOf("derived-") === 0) {
-          var ref = id.replace("derived-", "");
-          var a = Store.state.applications.filter(function (x) { return x.ref === ref; })[0];
-          if (a) m = { to: a.email, name: a.fullName, subject: "Application received — " + a.ref, status: a.emailStatus || "sent",
-            at: a.emailSentAt || a.createdAt, message: "This confirmation was sent from the client's own phone when they applied." };
-        }
-        if (!m) return;
-        UI.openModal(m.subject || "Email",
-          '<div class="mini-rows"><div class="mr"><span>To</span><b>' + U.escape(m.to) + "</b></div>" +
-          '<div class="mr"><span>Sent</span><b>' + U.fmtDateTime(m.sentAt || m.at) + "</b></div>" +
-          '<div class="mr"><span>Status</span><b>' + U.escape(m.status) + (m.error ? " — " + U.escape(m.error) : "") + "</b></div></div>" +
-          '<pre style="white-space:pre-wrap;font:inherit;font-size:.82rem;background:var(--line-2);padding:14px;border-radius:10px;margin-top:12px">' + U.escape(m.message) + "</pre>",
-          '<button class="btn btn-outline" data-close-modal>Close</button>');
-      };
-    });
-    document.querySelectorAll("[data-mailretry]").forEach(function (b) {
-      b.onclick = function () { b.disabled = true; CI.Mail.flush().then(function (n) { UI.toast(n + " email(s) sent.", "ok"); Admin.emails(); }); };
-    });
-    document.getElementById("mailFlush").onclick = function () {
-      if (!CI.Mail.enabled()) return UI.toast("Add the email settings first.", "warn");
-      CI.Mail.flush().then(function (n) { UI.toast(n ? n + " email(s) sent." : "Nothing could be sent yet.", n ? "ok" : "warn"); Admin.emails(); });
-    };
-    document.getElementById("mailTest").onclick = function () {
-      if (!CI.Mail.enabled()) return UI.toast("Add the email settings first (Settings → Email).", "warn");
-      var to = prompt("Send a test email to:", CI.Mail.config().staffEmail || "");
-      if (!to) return;
-      CI.Mail.send({ to: to, name: "Test", subject: "Test — CHILESHE INNOVATIONS emails", message: "This is a test from the Chileshe Loans app. If you can read this, confirmations are working.", kind: "test" })
-        .then(function (r) {
-          if (r && r.ok) UI.toast("Test email sent.", "ok");
-          else UI.toast("Could not send: " + ((r && r.error) || "unknown"), "danger", 7000);
-          Admin.emails();
-        });
-    };
-  };
-
   Admin.payments = function () {
     var pays = Store.state.payments.slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
     var confirmed = pays.filter(function (p) { return p.confirmed; }).reduce(function (s, p) { return s + p.amount; }, 0);
@@ -6664,9 +5912,7 @@ html, body { overflow-x: hidden; }
     var b = CI.Config.business;
     var usage = U.approxBytes(Store.state);
     var cloud = CI.Backend.config();
-    var mail = CI.Mail.config();
     var provider = cloud.provider || (cloud.anonKey ? "supabase" : (cloud.gasEndpoint ? "gas" : "supabase"));
-
 
     var html = adminHead("Settings", "Business details, rates, security, online sync and data.",
       '<a class="btn btn-outline btn-sm" href="#/admin/reports">' + UI.icon("chart") + " Reports</a>") +
@@ -6718,7 +5964,6 @@ html, body { overflow-x: hidden; }
         ? '<div class="alert alert-ok" style="margin-top:10px">' + UI.icon("check") + '<div class="small">This app is already connected to the office database. Staff just sign in with the <b>staff password</b> on any phone. Client phones need no setup at all.</div></div>'
         : "") +
       '<div class="tiny mt-2" id="cloudStatus">' + (CI.Backend.enabled() ? "● " + (provider === "gas" ? "Apps Script" : "Supabase") + " connected" : "● Not connected — the app is working on this device only") + " · Queue: " + CI.Backend.queueSize() + "</div>" +
-      '<div class="mt-3" id="dbFixBox">' + UI.templateKeyFixHTML() + '</div>' +
       '<div class="field mt-3"><label>Your other phones / computers</label>' +
       '<p class="tiny muted" style="margin:0 0 6px">Open this on a second owner device once to connect it <b>with admin rights</b>. Keep it private.</p>' +
       '<div class="flex" style="flex-wrap:wrap;gap:6px"><input type="text" id="ownerLink" readonly value="" style="flex:1;min-width:180px">' +
@@ -6728,25 +5973,6 @@ html, body { overflow-x: hidden; }
       '<div class="flex" style="flex-wrap:wrap;gap:6px"><input type="text" id="clientLink" readonly value="" style="flex:1;min-width:180px">' +
       '<button class="btn btn-outline btn-sm" id="copyClientLink">Copy</button>' +
       '<button class="btn btn-outline btn-sm" id="shareClientLink">Share</button></div></div></div>' +
-
-      '<div class="card card-pad"><h3>Email confirmations</h3>' +
-      '<p class="tiny small muted">Clients get a confirmation email when they register, when they apply, when a loan is approved and for every payment. Free with <b>EmailJS</b> (about 5 minutes to set up — see <b>EMAIL-GUIDE.md</b>).</p>' +
-      '<div class="field"><label for="mailProvider">Service</label><select id="mailProvider">' +
-        '<option value=""' + (!mail.provider ? " selected" : "") + '>Off</option>' +
-        '<option value="emailjs"' + (mail.provider === "emailjs" ? " selected" : "") + '>EmailJS (recommended)</option>' +
-        '<option value="webhook"' + (mail.provider === "webhook" ? " selected" : "") + '>Custom webhook / Apps Script</option>' +
-      '</select></div>' +
-      '<div class="field mt-2"><label for="mailService">EmailJS Service ID</label><input type="text" id="mailService" value="' + U.escape(mail.serviceId) + '" placeholder="service_xxxxxxx" autocomplete="off"></div>' +
-      '<div class="field mt-2"><label for="mailTemplate">EmailJS Template ID</label><input type="text" id="mailTemplate" value="' + U.escape(mail.templateId) + '" placeholder="template_xxxxxxx" autocomplete="off"></div>' +
-      '<div class="field mt-2"><label for="mailKey">EmailJS Public key</label><input type="text" id="mailKey" value="' + U.escape(mail.publicKey) + '" placeholder="Public key from EmailJS → Account" autocomplete="off"></div>' +
-      '<div class="field mt-2"><label for="mailEndpoint">Webhook URL (only for “Custom webhook”)</label><input type="url" id="mailEndpoint" value="' + U.escape(mail.endpoint) + '" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>' +
-      '<div class="field mt-2"><label for="mailReply">Reply-to address</label><input type="email" id="mailReply" value="' + U.escape(mail.replyTo) + '" placeholder="loans@yourbusiness.zm" autocomplete="off"></div>' +
-      '<div class="field mt-2"><label for="mailStaff">Office copy (optional)</label><input type="email" id="mailStaff" value="' + U.escape(mail.staffEmail) + '" placeholder="Leave blank — or your own email to see every client mail" autocomplete="off"></div>' +
-      '<div class="flex mt-2" style="flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="saveMail">Save</button>' +
-      '<button class="btn btn-outline btn-sm" id="testMail">Send test</button>' +
-      '<a class="btn btn-outline btn-sm" href="#/admin/emails">' + UI.icon("mail") + " Email log</a></div>" +
-      '<p class="tiny mt-2" style="margin-bottom:0;color:' + (CI.Mail.enabled() ? "var(--ok)" : "var(--warn)") + '">' +
-        (CI.Mail.enabled() ? "● Email is on — confirmations are being sent." : "● Email is off — confirmations are saved and will send once configured.") + "</p></div>" +
 
       '<div class="card card-pad"><h3>Data &amp; backup</h3>' +
       '<p class="small muted">Storage used: <b>' + U.bytesLabel(usage) + "</b> of roughly 5 MB available in this browser." + (usage > 3.5e6 ? ' <span class="red">Running low — export a backup.</span>' : "") + "</p>" +
@@ -6920,28 +6146,6 @@ html, body { overflow-x: hidden; }
       }).catch(function (err) { UI.toast("Push failed: " + err.message, "danger"); });
     };
 
-    document.getElementById("saveMail").onclick = function () {
-      Store.state.settings.mail = {
-        provider: document.getElementById("mailProvider").value,
-        serviceId: document.getElementById("mailService").value.trim(),
-        templateId: document.getElementById("mailTemplate").value.trim(),
-        publicKey: document.getElementById("mailKey").value.trim(),
-        endpoint: document.getElementById("mailEndpoint").value.trim(),
-        replyTo: document.getElementById("mailReply").value.trim(),
-        staffEmail: document.getElementById("mailStaff").value.trim()
-      };
-      Store.save();
-      UI.toast(CI.Mail.enabled() ? "Email configured." : "Saved — add the remaining details to switch email on.", CI.Mail.enabled() ? "ok" : "warn");
-      CI.App.render();
-    };
-    document.getElementById("testMail").onclick = function () {
-      if (!CI.Mail.enabled()) return UI.toast("Choose EmailJS and fill the three IDs first.", "warn");
-      var to = prompt("Send a test email to:", CI.Mail.config().staffEmail || CI.Config.business.email || "");
-      if (!to) return;
-      CI.Mail.send({ to: to, name: "Test", subject: "Test — CHILESHE INNOVATIONS email", message: "If you can read this, confirmations from the loan app are working.", kind: "test" })
-        .then(function (r) { UI.toast(r && r.ok ? "Test email sent to " + to + "." : "Could not send: " + ((r && r.error) || "unknown"), r && r.ok ? "ok" : "danger", 7000); });
-    };
-
     document.getElementById("dlBackup").onclick = function () { U.download("Chileshe-Backup-" + U.todayISO() + ".json", Store.exportJSON(), "application/json"); UI.toast("Backup downloaded."); };
     document.getElementById("restoreFile").onchange = function (e) {
       var f = e.target.files[0];
@@ -7005,7 +6209,6 @@ html, body { overflow-x: hidden; }
       case "loans": return Admin.loans();
       case "clients": return Admin.clients();
       case "payments": return Admin.payments();
-      case "emails": return Admin.emails();
       case "reminders": return Admin.reminders();
       case "reports": return Admin.reports();
       case "settings": return Admin.settings();
@@ -7186,8 +6389,6 @@ html, body { overflow-x: hidden; }
 
   /** Sync with the cloud (if configured). Silent unless force is used. */
   App.syncNow = function (force) {
-    // retry any confirmation emails that were queued while offline
-    if (CI.Mail && CI.Mail.flush) CI.Mail.flush();
     if (!CI.Backend || !CI.Backend.enabled()) return Promise.resolve(false);
     if (!navigator.onLine) return Promise.resolve(false);
     var path = location.hash.replace(/^#/, "") || "/";
@@ -7201,16 +6402,7 @@ html, body { overflow-x: hidden; }
       }
       return !!(res && res.updated);
     }).catch(function (err) {
-      var templateKey = /template admin key|CHANGE_ME_ADMIN_KEY/i.test(String(err && err.message || ""));
-      if (force) {
-        UI.toast(templateKey
-          ? "Sync failed: the office database still uses the published template key. Open Settings → Online sync and copy the one-line fix."
-          : "Sync failed: " + err.message, "danger", 8000);
-      }
-      if (templateKey && force && CI.Session.isAdmin()) {
-        try { sessionStorage.setItem("chileshe_open_fix", "1"); } catch (e) {}
-        location.hash = "#/admin/settings";
-      }
+      if (force) UI.toast("Sync failed: " + err.message, "danger", 6000);
       return false;
     }).then(function (v) { void path; return v; });
   };

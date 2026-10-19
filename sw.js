@@ -2,7 +2,7 @@
    CHILESHE INNOVATIONS MONEY LENDERS - Service Worker
    Makes the app installable and usable offline on GitHub Pages.
    ========================================================================== */
-var VERSION = "chileshe-v1.4.2";
+var VERSION = "chileshe-pwa-v1.1.0";
 var CORE = [
   "./",
   "./index.html",
