@@ -1,0 +1,45 @@
+{
+  "name": "CHILESHE INNOVATIONS MONEY LENDERS",
+  "short_name": "Chileshe Loans",
+  "description": "Apply for a loan in Zambia with clear weekly rates (15%-30%), track repayments and receive due-date reminders. CHILESHE INNOVATIONS MONEY LENDERS - call 0772742481.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait-primary",
+  "background_color": "#0B4F3C",
+  "theme_color": "#0B4F3C",
+  "lang": "en-ZM",
+  "dir": "ltr",
+  "categories": ["finance", "business"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Apply for a loan",
+      "short_name": "Apply",
+      "description": "Start a new loan application",
+      "url": "./index.html#/apply",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My dashboard",
+      "short_name": "Dashboard",
+      "description": "Balance, countdown and next payment",
+      "url": "./index.html#/dashboard",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Track a loan",
+      "short_name": "Track",
+      "description": "Look up an application with a tracking code",
+      "url": "./index.html#/track",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
