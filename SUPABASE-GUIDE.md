@@ -378,6 +378,76 @@ Photos are in the `documents` table; open one to download the image if you need 
 
 ---
 
+### v1.5.3 — the app updates itself properly
+
+- **Service worker registered with `updateViaCache: "none"`** — the browser can no longer serve
+  a stale `sw.js`, which was the mechanism that pinned phones to old builds.
+- When a new worker takes over, the app **reloads itself once** so the new version appears
+  immediately instead of on the third open.
+- **Settings → About → Force update**: deletes every cache and the service worker, then
+  reloads. A permanent self-service escape hatch for a phone that insists on an old copy.
+- Settings → About also prints the running version.
+
+### v1.5.2 — you can now see which version a phone is running
+
+- The **build number is printed in the footer of every screen** (`v1.5.2`) and on the
+  **staff sign-in card** (`App version 1.5.2`). When a tab or a fix “does not show”, check the
+  stamp first — if it is not the new number, the phone or the website is still serving an old
+  copy and no amount of tapping will change that.
+- Nothing else changed.
+
+### v1.5.1 — the office list is filled in
+
+- The **Digital list** tab now opens with the office's own **“FINAL DIGITAL LIST”** already
+  typed in: **all 22 entries from the printed sheet** (numbers 1–16 and 18–23 — the sheet has
+  no entry numbered 17, and that is kept exactly as printed), with the title and the
+  “Mr Mwaba Due 16-11-26 Corrected” line.
+- Totals come out at **Amount K21,650 · Interest K10,725 · Amount + Interest K32,375**.
+- The **No** column is now a real text column, so the printed numbers are preserved (the old
+  auto-numbering would have renumbered everything and hidden the gap).
+- A phone that already had the empty placeholder from the previous build is **upgraded in
+  place**: the blank sheet is replaced by the real list and the old empty copy is retired in
+  the database, so it does not come back on another phone.
+- Deleting the list on purpose still sticks — it is not re-created behind your back.
+- A ready-made `FINAL-DIGITAL-LIST-2026-10-19.csv` is included for Excel.
+
+### v1.5.0 — staff “Digital list” tab
+
+- New staff tab **Digital list** (`#/admin/book`): a live spreadsheet for the list the office
+  already keeps on paper — **No · Names · Amount · Interest · Numbers · Collateral · Date ·
+  Due Date** out of the box.
+- **Add / remove columns and rows** at will: rename, change type (text / money / date /
+  row number), reorder or delete a column; insert above/below, duplicate, move or delete a row.
+- **Paste rows** straight from Excel, WhatsApp or a text file; headings are detected and
+  skipped, separators can be tab, comma or double space.
+- Money columns sanitise typing (`0977 060 054` can never become billions), show `6,000`, and
+  **total automatically** at the foot of the table, with the overall figures underneath.
+- **Print** (clean A4 sheet with the business name and a TOTAL line), **CSV** for Excel,
+  **WhatsApp** text, and any number of named lists (this week, next week, a second officer…).
+- **Every staff phone shares the lists** through Supabase — two new functions
+  (`owner_sheets_pull`, `owner_sheets_push`) and a `private.sheets` table. Newest edit wins,
+  deletes propagate, and a brand-new phone **adopts the office list** instead of creating an
+  empty one. Offline edits queue and push when the phone reconnects.
+- All of it is in `PASTE-IN-SUPABASE.sql` — run that file once (again) to enable the tab.
+
+### v1.4.3 — email works on every phone, not just the office one
+
+- **The problem this fixes:** client phones send their own welcome, application and payment
+  emails, but email settings were stored per device — so a client's phone had no EmailJS
+  credentials and those messages sat in the log as `queued` forever. Only the office phone
+  could actually send.
+- **The fix:** staff save the settings once in **Settings → Email confirmations**, and the app
+  **publishes them to Supabase** (`owner_set_mail`). Every phone — clients included — reads
+  them on its next sync (`public_mail_config`) and sends its own mail. Configure once, not per
+  phone.
+- Two new SQL functions carry this. They are in the updated `PASTE-IN-SUPABASE.sql`, so
+  **re-run that file once**; it is idempotent and touches no records.
+- The published values are public-safe by design (an EmailJS *public* key belongs in browsers).
+  A wrong staff password cannot overwrite them — the publish call is gated by the same
+  bcrypt-checked key as every other owner action.
+- Settings now says *"Email saved and sent to every phone"* and reports when settings were
+  inherited from the office rather than typed on that device.
+
 ### v1.4.2 — packaged and ready to hand over
 
 - **`START-HERE.md`** — the two remaining actions, with nothing else to read.

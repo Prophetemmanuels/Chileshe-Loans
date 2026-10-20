@@ -805,6 +805,38 @@ html, body { overflow-x: hidden; }
 .seg-btn { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-weight: 700; font-size: .8rem; padding: 7px 16px; border-radius: 999px; cursor: pointer; }
 .seg-btn.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 
+/* ---------- staff digital list (spreadsheet) ---------- */
+.g-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.g-table { width: 100%; min-width: 720px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.g-table th, .g-table td { padding: 4px 4px; vertical-align: middle; border-bottom: 1px solid var(--line-2); }
+.g-table thead th { background: var(--paper-2, rgba(0,0,0,.03)); border-bottom: 2px solid var(--line); }
+.g-table th.g-c { text-align: left; }
+.g-chname { display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 7px; padding: 7px 7px; font: inherit; font-weight: 800; font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); cursor: pointer; line-height: 1.25; word-break: break-word; hyphens: auto; }
+.g-chname:hover { background: var(--paper); border-color: var(--line); color: var(--emerald-3); }
+.g-type { font-size: .62rem; font-weight: 700; color: var(--muted); letter-spacing: 0; text-transform: none; }
+.g-table td.g-money { text-align: right; }
+.g-input { width: 100%; box-sizing: border-box; padding: 8px 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; font: inherit; font-size: .86rem; color: var(--ink); }
+.g-input:hover { border-color: var(--line-2); background: var(--paper); }
+.g-input:focus { outline: none; border-color: var(--emerald); background: var(--paper); box-shadow: 0 0 0 3px var(--emerald-soft); }
+.g-table td.g-money .g-input { text-align: right; font-variant-numeric: tabular-nums; }
+.g-num { text-align: center; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.g-h { width: 34px; text-align: center; }
+.g-rowbtn { border: 0; background: none; color: var(--muted); font-size: 1rem; line-height: 1; padding: 6px 4px; cursor: pointer; border-radius: 6px; }
+.g-rowbtn:hover { background: var(--line-2); color: var(--ink); }
+.g-add { width: 34px; text-align: center; }
+.g-add .btn { padding: 4px 9px; min-width: 0; }
+.g-table tfoot td { border-top: 2px solid var(--line); border-bottom: 0; padding: 10px 8px; font-weight: 800; background: var(--paper-2, rgba(0,0,0,.03)); }
+.g-total { font-variant-numeric: tabular-nums; }
+.g-total-label { font-size: .7rem; letter-spacing: .1em; color: var(--muted); }
+.g-table tbody tr:hover td { background: rgba(11,79,60,.03); }
+@media (max-width: 640px) {
+  .g-table { min-width: 640px; }
+  .g-input { font-size: 16px; }   /* stops iOS zooming on focus */
+}
+@media print { .g-wrap { overflow: visible !important; } .g-table { min-width: 0; } }
+.g-hint { margin: 6px 2px 0; }
+@media (min-width: 900px) { .g-hint { display: none; } }
+
 </style>
 <script>
   // Tiny theme bootstrap: apply saved theme before first paint (avoids flash)
@@ -921,7 +953,7 @@ html, body { overflow-x: hidden; }
   </div>
   <div class="footer-base">
     <span>© <span id="year">2026</span> CHILESHE INNOVATIONS MONEY LENDERS. All rights reserved.</span>
-    <span>Borrow responsibly · Interest is charged per week as agreed</span>
+    <span>Borrow responsibly · Interest is charged per week as agreed · <b id="appVer" title="App version">v—</b></span>
   </div>
 </footer>
 
@@ -956,7 +988,8 @@ html, body { overflow-x: hidden; }
 
   CI.Config = {
     appName: "Chileshe Loans",
-    version: "1.3.0",
+    version: "1.5.4",
+    buildStamp: "2026-10-20 10:57",   // replaced automatically by the build with date + time
 
     business: {
       name: "CHILESHE INNOVATIONS",
@@ -993,6 +1026,23 @@ html, body { overflow-x: hidden; }
 
        NEVER put the admin key (or sb_secret_…) in this file.
        ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------
+       Email confirmations (EmailJS — free, works from the browser).
+       Create a free account at https://www.emailjs.com, connect the office
+       Gmail, make one template, then paste the three values here — or type
+       them once in Staff → Settings → Email.
+       The EmailJS public key is designed to be public.
+       ------------------------------------------------------------------ */
+    mail: {
+      provider: "",          // "emailjs" or "webhook"
+      serviceId: "",         // e.g. "service_ab12cd3"
+      templateId: "",        // e.g. "template_xy98zw7"
+      publicKey: "",         // e.g. "Zk3n...public key..."
+      endpoint: "",          // for the webhook option
+      replyTo: "",           // e.g. "loans@chileshe.co.zm"
+      staffEmail: ""         // optional copy to the office
+    },
+
     supabase: {
       // 1. your project (Project Settings → Data API)
       url: "https://vvrffehhofnvypujtyhn.supabase.co",
@@ -1062,7 +1112,8 @@ html, body { overflow-x: hidden; }
       users: [],          // client accounts { id, name, phone, pinHash, nrc, ... }
       applications: [],   // loan applications { ref, userId, amount, weeks, ..., status }
       loans: [],          // approved loans { ref, userId, principal, ..., dueDate, status }
-      payments: [],       // { id, ref, amount, date, method, receiptNo, recordedBy }
+      payments: [],
+      mails: [],       // { id, ref, amount, date, method, receiptNo, recordedBy }
       notifications: [],  // { id, userId | 'admin', type, title, body, date, read }
       activity: [],       // audit trail { id, at, actor, action, detail }
       settings: {
@@ -1985,6 +2036,18 @@ html, body { overflow-x: hidden; }
       case "loan_update":
         return rpc("owner_push", { p_key: key, p_applications: [], p_loans: [payload.loan], p_payments: [] });
 
+      case "sheets_pull":
+        return rpc("owner_sheets_pull", { p_key: key });
+
+      case "sheets_push":
+        return rpc("owner_sheets_push", { p_key: key, p_sheets: payload.sheets || [] });
+
+      case "mail_get":
+        return rpc("public_mail_config", {});
+
+      case "mail_set":
+        return rpc("owner_set_mail", { p_key: key, p_config: payload.config || {} });
+
       case "notifications":
         // reminders are generated per device from the shared records
         return Promise.resolve({ ok: true, skipped: true });
@@ -1993,6 +2056,50 @@ html, body { overflow-x: hidden; }
         return Promise.reject(new Error("Unknown action: " + action));
     }
   }
+
+  /* ---------------- digital list (staff spreadsheet) ---------------- */
+  Backend.pullSheets = function () {
+    var c = Backend.config();
+    if (!Backend.enabled() || c.provider !== "supabase" || !c.adminKey) return Promise.resolve({ ok: false, error: "Not a staff device" });
+    return rpc("owner_sheets_pull", { p_key: c.adminKey }).then(function (r) {
+      if (r && typeof r === "string") { try { r = JSON.parse(r); } catch (e) {} }
+      return r;
+    });
+  };
+
+  Backend.pushSheets = function (sheets) {
+    var c = Backend.config();
+    if (!Backend.enabled() || c.provider !== "supabase" || !c.adminKey) return Promise.resolve({ ok: false, error: "Not a staff device" });
+    return rpc("owner_sheets_push", { p_key: c.adminKey, p_sheets: sheets || [] }).then(function (r) {
+      if (r && typeof r === "string") { try { r = JSON.parse(r); } catch (e) {} }
+      return r;
+    });
+  };
+
+  /* ---------------- email settings shared by every phone ---------------- */
+  Backend.fetchMailConfig = function () {
+    if (!Backend.enabled()) return Promise.resolve(null);
+    if (Backend.config().provider !== "supabase") return Promise.resolve(null);
+    return rpc("public_mail_config", {}).then(function (cfg) {
+      if (!cfg || typeof cfg !== "object") return null;
+      // PostgREST may hand back a JSON string depending on the function's type
+      if (typeof cfg === "string") { try { cfg = JSON.parse(cfg); } catch (e) { return null; } }
+      return cfg;
+    }).catch(function () { return null; });
+  };
+
+  Backend.publishMail = function (cfg) {
+    var c = Backend.config();
+    if (!Backend.enabled() || c.provider !== "supabase" || !c.adminKey) {
+      return Promise.resolve({ ok: false, error: "Not a staff device" });
+    }
+    var clean = {
+      provider: cfg.provider || "", serviceId: cfg.serviceId || "",
+      templateId: cfg.templateId || "", publicKey: cfg.publicKey || "",
+      endpoint: cfg.endpoint || "", replyTo: cfg.replyTo || "", staffEmail: cfg.staffEmail || ""
+    };
+    return rpc("owner_set_mail", { p_key: c.adminKey, p_config: clean });
+  };
 
   /* ---------------- Google Apps Script (legacy) ---------------- */
   function gasRequest(action, payload, opts) {
@@ -2305,6 +2412,381 @@ html, body { overflow-x: hidden; }
 })();
 
 
+/* ===== mail.js ===== */
+/* ==========================================================================
+   Email confirmations.
+
+   Sends registration, application, approval, payment and reminder emails to
+   the client's own address — the same way the Bible-school app does.
+
+   Transports (choose in Staff → Settings → Email):
+     • EmailJS  — works straight from the browser, free plan, no server.
+                  https://www.emailjs.com  (Service + Template + Public key)
+     • Webhook  — POST JSON to any URL, e.g. a Google Apps Script mailer.
+
+   Nothing is ever sent silently: every attempt is recorded in
+   Store.state.mails so the staff section shows exactly what went out, to
+   whom, and whether it succeeded.
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  var U = CI.U, UI = CI.UI, Store = CI.Store, Calc = CI.Calc;
+  var Mail = {};
+  var MAX_LOG = 200;
+
+  /* Settings precedence, most specific first:
+       1. what staff saved on THIS device (Settings → Email confirmations)
+       2. what the office published to the database (so client phones send mail too)
+       3. what was compiled into the app (js/config.js)                         */
+  Mail.config = function () {
+    var local = (Store.state.settings.mail || {});
+    var cloud = (Store.state.settings.mailCloud || {});
+    var defaults = (CI.Config.mail || {});
+    function pick(k) { return local[k] || cloud[k] || defaults[k] || ""; }
+    return {
+      provider: pick("provider"),
+      serviceId: pick("serviceId"),
+      templateId: pick("templateId"),
+      publicKey: pick("publicKey"),
+      endpoint: pick("endpoint"),
+      replyTo: local.replyTo || cloud.replyTo || defaults.replyTo || (CI.Config.business.email || ""),
+      staffEmail: local.staffEmail || cloud.staffEmail || defaults.staffEmail || ""
+    };
+  };
+
+  /* Staff publish the settings once; every phone (clients included) picks them up on sync. */
+  Mail.publish = function (cfg) {
+    if (!CI.Backend || !CI.Backend.publishMail) return Promise.resolve({ skipped: true });
+    return CI.Backend.publishMail(cfg || Mail.config());
+  };
+
+  /* Called at the start of every sync. Never throws, never blocks the sync. */
+  Mail.refreshCloud = function () {
+    if (!CI.Backend || !CI.Backend.fetchMailConfig) return Promise.resolve(false);
+    return CI.Backend.fetchMailConfig().then(function (cfg) {
+      var st = Store.state;
+      if (!st.settings) st.settings = {};
+      if (cfg && typeof cfg === "object" && (cfg.provider || cfg.serviceId)) {
+        st.settings.mailCloud = cfg;
+        try { Store.save(); } catch (e) {}
+        return true;
+      }
+      return false;
+    }).catch(function () { return false; });
+  };
+
+  Mail.enabled = function () {
+    var c = Mail.config();
+    if (c.provider === "emailjs") return !!(c.serviceId && c.templateId && c.publicKey);
+    if (c.provider === "webhook") return /^https?:\/\//.test(c.endpoint || "");
+    return false;
+  };
+
+  function validEmail(e) { return /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(e || "").trim()); }
+  Mail.validEmail = validEmail;
+
+  /* ---------------- log ---------------- */
+  function log(entry) {
+    var st = Store.state;
+    if (!Array.isArray(st.mails)) st.mails = [];
+    st.mails.unshift(entry);
+    if (st.mails.length > MAX_LOG) st.mails.length = MAX_LOG;
+    try { Store.save(); } catch (e) {}
+  }
+  Mail.log = function () { return (Store.state.mails || []).slice(); };
+  Mail.pendingCount = function () { return Mail.log().filter(function (m) { return m.status === "queued"; }).length; };
+
+  /* ---------------- transports ---------------- */
+  function transport(to, name, subject, message) {
+    var c = Mail.config();
+    if (c.provider === "emailjs") {
+      if (!Mail.enabled()) return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
+      return fetch("https://api.emailjs.com/api/v1.0/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_id: c.serviceId,
+          template_id: c.templateId,
+          user_id: c.publicKey,
+          template_params: {
+            to_email: to,
+            to_name: name || "",
+            subject: subject,
+            message: message,
+            from_name: CI.Config.business.legalName,
+            reply_to: c.replyTo || CI.Config.business.email || "",
+            business_phone: CI.Config.business.phoneDisplay
+          }
+        })
+      }).then(function (r) {
+        if (!r.ok) throw new Error("EmailJS responded " + r.status);
+        return { ok: true };
+      });
+    }
+    if (c.provider === "webhook") {
+      if (!Mail.enabled()) return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
+      return fetch(c.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          to: to, name: name || "", subject: subject, message: message,
+          from: CI.Config.business.legalName,
+          replyTo: c.replyTo || "", staffEmail: c.staffEmail || ""
+        })
+      }).then(function (r) {
+        if (!r.ok) throw new Error("Mail server responded " + r.status);
+        return { ok: true };
+      });
+    }
+    return Promise.reject(new Error("Email is not configured yet (Settings → Email)."));
+  }
+
+  /**
+   * Send one email. Never throws: if the phone is offline the message is kept
+   * as "queued" and CI.Mail.flush() retries it later.
+   */
+  Mail.send = function (opts) {
+    opts = opts || {};
+    var to = String(opts.to || "").trim();
+    if (!validEmail(to)) {
+      log({ id: U.uid("mail"), to: to || "(none)", name: opts.name || "", subject: opts.subject || "",
+        kind: opts.kind || "message", ref: opts.ref || "", message: opts.message || "",
+        status: "no-address", attempts: 0, at: new Date().toISOString(),
+        error: "No email address on file" });
+      return Promise.resolve({ skipped: "no-email" });
+    }
+    if (!Mail.enabled()) {
+      log({ id: U.uid("mail"), to: to, name: opts.name || "", subject: opts.subject || "",
+        kind: opts.kind || "message", ref: opts.ref || "", message: opts.message || "",
+        status: "queued", attempts: 0, at: new Date().toISOString(),
+        error: "Email is not switched on yet" });
+      return Promise.resolve({ queued: true, error: "Email is not switched on yet" });
+    }
+
+    var entry = {
+      id: U.uid("mail"),
+      to: to,
+      name: opts.name || "",
+      subject: opts.subject || "",
+      kind: opts.kind || "message",
+      ref: opts.ref || "",
+      message: opts.message || "",
+      status: "sending",
+      attempts: 1,
+      at: new Date().toISOString()
+    };
+
+    return transport(to, entry.name, entry.subject, entry.message).then(function () {
+      entry.status = "sent";
+      entry.sentAt = new Date().toISOString();
+      log(entry);
+      staffCopy(to, entry);
+      return { ok: true };
+    }).catch(function (err) {
+      entry.status = "queued";
+      entry.error = err.message || String(err);
+      log(entry);
+      return { ok: false, error: entry.error };
+    });
+  };
+
+  /* Optional: send the office a copy of a client email (Settings → Staff copy).
+     Off unless a staff address is set, and never sent to the same address twice. */
+  function staffCopy(to, entry) {
+    var staff = String(Mail.config().staffEmail || "").trim();
+    if (!staff || !validEmail(staff) || staff.toLowerCase() === to.toLowerCase()) return;
+    if (entry.kind === "staff-copy" || entry.kind === "test") return;
+    var copy = {
+      id: U.uid("mail"), to: staff, name: "Office copy", subject: "[Copy] " + entry.subject,
+      kind: "staff-copy", ref: entry.ref || "", message: entry.message,
+      status: "sending", attempts: 1, at: new Date().toISOString()
+    };
+    transport(staff, copy.name, copy.subject, copy.message).then(function () {
+      copy.status = "sent"; copy.sentAt = new Date().toISOString(); log(copy);
+    }).catch(function (err) {
+      copy.status = "queued"; copy.error = err.message || String(err); log(copy);
+    });
+  }
+
+  /** Retry anything queued (called after a successful sync / when back online). */
+  Mail.flush = function () {
+    if (!Mail.enabled() || !navigator.onLine) return Promise.resolve(0);
+    var queued = Mail.log().filter(function (m) { return m.status === "queued"; }).reverse();
+    if (!queued.length) return Promise.resolve(0);
+    var done = 0, chain = Promise.resolve();
+    queued.forEach(function (m) {
+      chain = chain.then(function () {
+        return transport(m.to, m.name, m.subject, m.message).then(function () {
+          m.status = "sent"; m.sentAt = new Date().toISOString(); done++;
+          Store.save();
+        }).catch(function () { m.attempts = (m.attempts || 1) + 1; Store.save(); });
+      });
+    });
+    return chain.then(function () { return done; });
+  };
+
+  /* ---------------- message templates ---------------- */
+  var B = function () { return CI.Config.business; };
+  function sign() {
+    return "\n\n" + B().legalName + "\n" + B().phoneDisplay + " · WhatsApp " + B().phoneDisplay + "\n" + B().address;
+  }
+
+  Mail.templates = {
+    welcome: function (user) {
+      return {
+        kind: "welcome",
+        subject: "Your " + B().name + " account is ready",
+        message:
+          "Hello " + user.fullName + ",\n\n" +
+          "Your account with " + B().legalName + " has been created successfully.\n\n" +
+          "Phone on record: " + user.phone + "\n" +
+          "You can now apply for a loan, track your balance and receive receipts in the app.\n\n" +
+          "Keep your PIN private. If this was not you, call us immediately on " + B().phoneDisplay + "." + sign()
+      };
+    },
+    application: function (app, user) {
+      return {
+        kind: "application",
+        subject: "Application received — " + app.ref,
+        message:
+          "Hello " + app.fullName + ",\n\n" +
+          "We have received your loan application.\n\n" +
+          "Reference: " + app.ref + "\n" +
+          "Tracking code: " + app.accessCode + "\n" +
+          "Amount requested: " + U.money(app.amount) + "\n" +
+          "Term: " + app.weeks + " week" + (app.weeks > 1 ? "s" : "") + " at " + app.pct + "%\n" +
+          "Total repayable if approved: " + U.money(app.total) + "\n" +
+          "Purpose: " + (app.purpose || "—") + "\n\n" +
+          "Our team reviews applications during business hours. Keep this tracking code — you can follow the application on the Track screen without signing in." + sign()
+      };
+    },
+    approved: function (loan, app) {
+      return {
+        kind: "approved",
+        subject: "Loan approved — " + loan.ref,
+        message:
+          "Hello " + loan.customerName + ",\n\n" +
+          "Good news — your loan has been approved.\n\n" +
+          "Loan: " + loan.ref + "\n" +
+          "Principal: " + U.money(loan.principal) + "\n" +
+          "Interest (" + loan.pct + "% flat): " + U.money(loan.interest) + "\n" +
+          "Total repayable: " + U.money(loan.total) + "\n" +
+          "Due date: " + U.fmtDate(loan.dueDate, "long") + "\n\n" +
+          "You can see the full schedule, make payments and download your agreement in the app." + sign()
+      };
+    },
+    declined: function (app) {
+      return {
+        kind: "declined",
+        subject: "Update on application " + app.ref,
+        message:
+          "Hello " + app.fullName + ",\n\n" +
+          "We are unable to approve application " + app.ref + " at this time.\n" +
+          (app.reviewNote ? "\nReason: " + app.reviewNote + "\n" : "") +
+          "\nPlease call us on " + B().phoneDisplay + " if you would like to discuss it." + sign()
+      };
+    },
+    payment: function (payment, loan) {
+      var f = Calc.loanFinance(loan);
+      return {
+        kind: "payment",
+        subject: "Payment received — " + U.money(payment.amount) + " (" + payment.ref + ")",
+        message:
+          "Hello " + payment.customerName + ",\n\n" +
+          "We have recorded your payment.\n\n" +
+          "Receipt: " + payment.ref + "\n" +
+          "Loan: " + payment.loanRef + "\n" +
+          "Amount: " + U.money(payment.amount) + "\n" +
+          "Method: " + payment.method + "\n" +
+          "Date: " + U.fmtDate(payment.date, "long") + "\n\n" +
+          "Total repayable: " + U.money(f.total) + "\n" +
+          "Paid so far: " + U.money(f.paid) + "\n" +
+          "Balance remaining: " + U.money(f.balance) + "\n" +
+          "Status: " + (payment.confirmed ? "Confirmed by the office" : "Awaiting office confirmation") + sign()
+      };
+    },
+    paymentConfirmed: function (payment, loan) {
+      var f = loan ? Calc.loanFinance(loan) : null;
+      return {
+        kind: "payment-confirmed",
+        subject: "Payment confirmed — " + U.money(payment.amount) + " (" + payment.ref + ")",
+        message:
+          "Hello " + payment.customerName + ",\n\n" +
+          "The office has confirmed your payment. Thank you.\n\n" +
+          "Receipt: " + payment.ref + "\n" +
+          "Loan: " + payment.loanRef + "\n" +
+          "Amount: " + U.money(payment.amount) + "\n" +
+          "Method: " + payment.method + "\n" +
+          "Date: " + U.fmtDate(payment.date, "long") + "\n\n" +
+          (f ? ("Total repayable: " + U.money(f.total) + "\n" +
+                "Paid so far: " + U.money(f.paid) + "\n" +
+                "Balance remaining: " + U.money(f.balance) + "\n") : "") +
+          "Status: Confirmed by the office" + sign()
+      };
+    },
+    paidOff: function (loan) {
+      return {
+        kind: "paid-off",
+        subject: "Loan " + loan.ref + " fully paid",
+        message:
+          "Hello " + loan.customerName + ",\n\n" +
+          "Your loan " + loan.ref + " is now fully settled — " + U.money(loan.total) + " received.\n\n" +
+          "Thank you for banking with " + B().legalName + ". You are welcome to apply again at any time." + sign()
+      };
+    },
+    reminder: function (loan) {
+      var f = Calc.loanFinance(loan);
+      return {
+        kind: "reminder",
+        subject: "Payment reminder — " + loan.ref,
+        message:
+          "Hello " + loan.customerName + ",\n\n" +
+          "A reminder about your loan " + loan.ref + ".\n\n" +
+          "Outstanding balance: " + U.money(f.balance) + "\n" +
+          "Due date: " + U.fmtDate(loan.dueDate, "long") + "\n" +
+          (f.daysLeft < 0 ? "This is " + Math.abs(f.daysLeft) + " day(s) overdue.\n" : f.daysLeft === 0 ? "This is due today.\n" : "That is " + f.daysLeft + " day(s) from today.\n") +
+          "\nYou can pay and see your balance in the app, or call " + B().phoneDisplay + "." + sign()
+      };
+    },
+    custom: function (user, subject, message) {
+      return { kind: "custom", subject: subject, message: "Hello " + user.fullName + ",\n\n" + message + sign() };
+    }
+  };
+
+  /** Convenience: send a template to a person. */
+  Mail.notify = function (templateName, person, a, b) {
+    try {
+      var tpl = Mail.templates[templateName];
+      if (!tpl || !person) return Promise.resolve({ skipped: "no-template" });
+      // welcome/custom take the person; the others take (record) or (record, person)
+      var built = tpl(a === undefined ? person : a, b === undefined ? person : b);
+      return Mail.send({
+        to: person.email || (a && a.email) || "",
+        name: person.fullName || person.customerName || "",
+        subject: built.subject,
+        message: built.message,
+        kind: built.kind,
+        ref: (a && (a.ref || a.loanRef)) || ""
+      });
+    } catch (e) {
+      // never fail silently — a broken template must show up in the Email log
+      log({ id: U.uid("mail"), to: (person && person.email) || "(none)", name: (person && person.fullName) || "",
+        subject: "Could not build email [" + templateName + "]", kind: "error", ref: "",
+        message: e.message, status: "failed", attempts: 0, at: new Date().toISOString(), error: e.message });
+      return Promise.resolve({ ok: false, error: e.message });
+    }
+  };
+
+  /** Fire-and-forget used by the app so email never blocks a screen. */
+  Mail.after = function (fn) {
+    setTimeout(function () { try { fn(); } catch (e) {} }, 800);
+  };
+
+  CI.Mail = Mail;
+})();
+
+
 /* ===== records.js ===== */
 /* ==========================================================================
    Records module — applications, approvals, payments, receipts
@@ -2315,6 +2797,16 @@ html, body { overflow-x: hidden; }
   var U = CI.U, Calc = CI.Calc, Store = CI.Store;
 
   var Loans = {};
+
+  /** Records may only know the email captured at application time. */
+  function objectWithEmail(person, email) {
+    if (!person) person = {};
+    if (person.email) return person;
+    var copy = {};
+    for (var k in person) if (Object.prototype.hasOwnProperty.call(person, k)) copy[k] = person[k];
+    copy.email = email || "";
+    return copy;
+  }
 
   /* ---------------- lookups ---------------- */
   Loans.forUser = function (userId) {
@@ -2412,9 +2904,17 @@ html, body { overflow-x: hidden; }
     if (CI.Backend.enabled()) {
       CI.Backend.submit("apply", {
         application: app,
-        user: { id: user.id, fullName: user.fullName, phone: user.phone }
+        user: { id: user.id, fullName: user.fullName, phone: user.phone, email: user.email }
       });
     }
+    // confirmation email with the tracking code
+    CI.Mail.notify("application", user, app).then(function (r) {
+      app.emailStatus = r && r.ok ? "sent" : (r && r.skipped ? "no-email" : "queued");
+      app.emailSentAt = new Date().toISOString();
+      app.updatedAt = new Date().toISOString();
+      Store.save();
+      if (CI.Backend.enabled()) CI.Backend.submit("application_update", { application: app });
+    });
     return app;
   };
 
@@ -2439,6 +2939,7 @@ html, body { overflow-x: hidden; }
       accessCode: app.accessCode,
       customerName: app.fullName,
       customerPhone: app.phone,
+      customerEmail: (user && user.email) || app.email || "",
       principal: app.amount,
       weeks: app.weeks,
       pct: app.pct,
@@ -2468,6 +2969,7 @@ html, body { overflow-x: hidden; }
     if (user) user.hasLoan = true;
 
     if (CI.Backend.enabled()) CI.Backend.submit("loan", { loan: loan, application: app }, { admin: true });
+    CI.Mail.notify("approved", objectWithEmail(user || app, loan.customerEmail), loan, app);
     return loan;
   };
 
@@ -2482,6 +2984,8 @@ html, body { overflow-x: hidden; }
     Store.log("Admin", "Declined application " + app.ref, reason || "");
     Store.notify(app.userId, "rejected", "Application update", "We could not approve application " + app.ref + " at this time. " + (reason ? "Reason: " + reason : "") + " Please call 0772742481 to discuss.", { ref: app.ref, severity: "warn" });
     if (CI.Backend.enabled()) CI.Backend.submit("application_update", { application: app });
+    var uRej = Store.state.users.find(function (u) { return u.id === app.userId; }) || app;
+    CI.Mail.notify("declined", objectWithEmail(uRej, app.email), app);
     return true;
   };
 
@@ -2513,6 +3017,7 @@ html, body { overflow-x: hidden; }
       loanId: loan.id,
       userId: loan.userId,
       customerName: loan.customerName,
+      customerEmail: loan.customerEmail || (Store.state.users.find(function (u) { return u.id === loan.userId; }) || {}).email || "",
       amount: amount,
       method: data.method || "Cash at office",
       note: data.note || "",
@@ -2541,6 +3046,8 @@ html, body { overflow-x: hidden; }
       Store.save();
     }
     if (CI.Backend.enabled()) CI.Backend.submit("payment", { payment: payment });
+    var uPay = Store.state.users.find(function (u) { return u.id === loan.userId; }) || loan;
+    CI.Mail.notify("payment", objectWithEmail(uPay, payment.customerEmail), payment, loan);
     return payment;
   };
 
@@ -2553,6 +3060,8 @@ html, body { overflow-x: hidden; }
     Store.log("Admin", "Confirmed payment " + p.ref, p.loanRef + " · " + U.money(p.amount));
     Store.notify(p.userId, "payment", "Payment confirmed", "Your payment of " + U.money(p.amount) + " (receipt " + p.ref + ") has been verified. Thank you.", { ref: p.loanRef });
     if (CI.Backend.enabled()) CI.Backend.submit("payment_update", { payment: p }, { admin: true });
+    var uConf = Store.state.users.find(function (u) { return u.id === p.userId; }) || p;
+    CI.Mail.notify("paymentConfirmed", objectWithEmail(uConf, p.customerEmail), p, Loans.get(p.loanRef));
     return true;
   };
 
@@ -2612,6 +3121,7 @@ html, body { overflow-x: hidden; }
 
   /* ---------------- icons ---------------- */
   var P = {
+    mail: '<rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 7 9 6 9-6"/>',
     home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
     cash: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5h.01M18 14.5h.01"/>',
     calc: '<rect x="4" y="2.5" width="16" height="19" rx="2.5"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>',
@@ -2641,7 +3151,8 @@ html, body { overflow-x: hidden; }
     calendar: '<rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M8 2v4M16 2v4M3 9.5h18"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
     refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>',
-    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    grid: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'
   };
 
   UI.icon = function (name, cls) {
@@ -2740,7 +3251,9 @@ html, body { overflow-x: hidden; }
     { href: "#/admin/applications", icon: "file", label: "Applications" },
     { href: "#/admin/loans", icon: "cash", label: "Loans" },
     { href: "#/admin/clients", icon: "users", label: "Clients" },
+    { href: "#/admin/book", icon: "grid", label: "Digital list" },
     { href: "#/admin/payments", icon: "wallet", label: "Payments" },
+    { href: "#/admin/emails", icon: "mail", label: "Emails" },
     { href: "#/admin/reminders", icon: "bell", label: "Reminders" },
     { href: "#/admin/reports", icon: "chart", label: "Reports" },
     { href: "#/admin/settings", icon: "gear", label: "Settings" }
@@ -2755,6 +3268,16 @@ html, body { overflow-x: hidden; }
     var target = href.replace(/^#/, "");
     if (end) return cur === target;
     return cur === target || cur.indexOf(target + "/") === 0;
+  };
+
+  /* The build stamp. Printed in the footer and on the staff sign-in card so a
+     stale copy on a phone is obvious at a glance ("is this the new app?"). */
+  UI.stampVersion = function () {
+    var full = "v" + CI.Config.version + (CI.Config.buildStamp && CI.Config.buildStamp !== "dev" ? " · " + CI.Config.buildStamp : "");
+    var el = document.getElementById("appVer");
+    if (el) el.textContent = full;
+    var b = document.getElementById("loginVer");
+    if (b) b.textContent = "App version " + full;
   };
 
   UI.renderChrome = function () {
@@ -2804,6 +3327,7 @@ html, body { overflow-x: hidden; }
     var list = UI.notifications("client");
     var dot = document.getElementById("notifDot");
     if (dot) dot.hidden = !list.some(function (n) { return !n.read; });
+    UI.stampVersion();
   };
 
   /* ---------------- notifications ---------------- */
@@ -2847,6 +3371,7 @@ html, body { overflow-x: hidden; }
   /* ---------------- install (PWA) ---------------- */
   var installEvent = null;
   UI.isStandalone = function () {
+    if (!window.matchMedia) return window.navigator.standalone === true;
     return window.matchMedia("(display-mode: standalone)").matches ||
       window.matchMedia("(display-mode: fullscreen)").matches ||
       window.navigator.standalone === true;
@@ -3007,6 +3532,52 @@ html, body { overflow-x: hidden; }
   };
   UI.money = U.money;
 
+  /* ---------------- "database still uses the template key" helper ----------------
+     Shown wherever that error can surface (staff sign-in, Settings, Sync now).
+     One tap copies SQL that is valid to paste straight into Supabase. */
+  /* NOTE: deliberately does NOT contain the real password — this bundle is served
+     publicly from GitHub Pages. The user replaces the placeholder with their own. */
+  UI.TEMPLATE_KEY_SQL = [
+    "insert into private.app_config (key, value, updated_at)",
+    "values ('admin_key_hash', extensions.crypt('YOUR-STAFF-PASSWORD', extensions.gen_salt('bf', 10)), now())",
+    "on conflict (key) do update set value = excluded.value, updated_at = now();"
+  ].join("\n");
+
+  UI.templateKeyFixHTML = function (opts) {
+    opts = opts || {};
+    return '<div class="alert alert-warn mt-2" style="align-items:flex-start">' + UI.icon("alert") +
+      '<div style="min-width:0"><div class="small"><b>The office database still uses the published template key.</b> ' +
+      'Until it is changed, any stranger who reads the app’s public files could open your staff console.</div>' +
+      '<p class="tiny" style="margin:8px 0 6px">Open <b>Supabase → SQL Editor → New query</b>, replace <b>YOUR-STAFF-PASSWORD</b> with the password you want staff to type, press <b>Run</b>, then tap <b>Test</b> again. It works even if the key row was never created. (The password is never written into this app’s public files.)</p>' +
+      '<pre id="fixSql" style="white-space:pre-wrap;word-break:break-word;background:rgba(0,0,0,.28);padding:10px;border-radius:8px;font-size:11.5px;line-height:1.5;margin:0">' +
+        U.escape(UI.TEMPLATE_KEY_SQL) + '</pre>' +
+      '<div class="flex mt-2" style="flex-wrap:wrap;gap:6px">' +
+        '<button class="btn btn-outline btn-sm" id="copyFixSql" type="button">Copy this SQL</button>' +
+        '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener" href="https://supabase.com/dashboard/project/vvrffehhofnvypujtyhn/sql/new">Open SQL Editor</a>' +
+      '</div></div></div>';
+  };
+
+  /* one delegated handler, so the button works on every screen */
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest("#copyFixSql") : null;
+    if (!b) return;
+    e.preventDefault();
+    var sql = UI.TEMPLATE_KEY_SQL;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(sql).then(function () {
+        UI.toast("SQL copied — paste it in Supabase → SQL Editor.", "ok");
+      }).catch(function () { UI.toast("Select the SQL above and copy it manually.", "warn"); });
+    } else {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = sql; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+        document.body.removeChild(ta);
+        UI.toast("SQL copied — paste it in Supabase → SQL Editor.", "ok");
+      } catch (err) { UI.toast("Select the SQL above and copy it manually.", "warn"); }
+    }
+  });
+
   UI.escape = U.escape; // convenience alias
   CI.UI = UI;
 })();
@@ -3030,6 +3601,10 @@ html, body { overflow-x: hidden; }
       if (!data.fullName || data.fullName.trim().length < 3) return { ok: false, error: "Please enter your full name." };
       if (!U.validPhone(phone)) return { ok: false, error: "Enter a valid Zambian phone number, e.g. 0971234567." };
       if (!U.pinOk(data.pin)) return { ok: false, error: "Your PIN must be 4–6 digits." };
+      if (!data.email || !CI.Mail.validEmail(data.email)) return { ok: false, error: "Enter a valid email address — we send your confirmations there." };
+      if (Store.state.users.some(function (u) { return (u.email || "").toLowerCase() === String(data.email).toLowerCase(); })) {
+        return { ok: false, error: "That email address is already used by another account." };
+      }
       if (data.pin !== data.confirmPin) return { ok: false, error: "The two PINs do not match." };
       if (Store.state.users.some(function (u) { return U.normalisePhone(u.phone) === phone; })) {
         return { ok: false, error: "An account with this phone number already exists. Please sign in instead." };
@@ -3042,7 +3617,7 @@ html, body { overflow-x: hidden; }
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         nrc: "",
-        email: "",
+        email: String(data.email).trim(),
         address: "",
         dob: "",
         notifications: true
@@ -3051,6 +3626,13 @@ html, body { overflow-x: hidden; }
       Store.save();
       Store.log(user.fullName, "Created account", U.mask(phone, 4));
       CI.Session.set({ userId: user.id });
+      // confirmation email (never blocks sign-up)
+      CI.Mail.notify("welcome", user).then(function (r) {
+        user.emailStatus = r && r.ok ? "sent" : (r && r.skipped ? "no-email" : "queued");
+        user.emailSentAt = new Date().toISOString();
+        Store.save();
+        if (r && r.ok) UI.toast("A confirmation email was sent to " + user.email + ".", "ok", 6000);
+      });
       Store.notify(user.id, "welcome", "Welcome to Chileshe Loans", "You can now apply for a loan, track repayments and receive due-date reminders on this app.", { severity: "ok" });
       return { ok: true, user: user };
     },
@@ -3293,6 +3875,31 @@ html, body { overflow-x: hidden; }
         U.download("Receipt-" + payment.ref + ".html", "<!doctype html><meta charset='utf-8'><style>body{font-family:Georgia,serif;max-width:720px;margin:40px auto;color:#17231E;font-size:.9rem}.doc-head{display:flex;justify-content:space-between;border-bottom:3px double #999;padding-bottom:14px;margin-bottom:16px}.doc-brand{font-weight:800;color:#0B4F3C}.doc-brand small{display:block;font-size:.6rem;letter-spacing:.2em;font-family:Arial}.doc-title{text-align:right}.doc-title b{display:block;letter-spacing:.1em}.doc-title span{font-size:.75rem;color:#666}.doc-rows div{display:flex;justify-content:space-between;border-bottom:1px dotted #bbb;padding-bottom:4px;margin-bottom:8px}.doc-rows span:first-child{color:#666}.doc-sign{display:flex;gap:20px;margin-top:40px}.doc-sign div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:.72rem;color:#666}.doc-note{font-size:.7rem;color:#666;margin-top:18px}.doc-stamp{display:inline-block;border:2px solid #B88A20;color:#B88A20;font-weight:800;letter-spacing:.12em;font-size:.66rem;padding:5px 10px;transform:rotate(-4deg)}.alert{padding:10px;border-radius:8px;font-size:.8rem;margin-bottom:12px}.alert-ok{background:#e4f3ea;color:#1E7A4C}.alert-warn{background:#fdf3e1;color:#B7791F}</style>" + Client.receiptHTML(payment, loan));
       }
     });
+  };
+
+  /** Printable statement used by staff (all transactions for one client). */
+  Client.statementHTML = function (c, rows) {
+    var B = CI.Config.business;
+    return '<div class="doc-head"><div class="doc-brand">' + B.name + '<small>' + B.tagline + '</small></div>' +
+      '<div class="doc-title"><b>CLIENT STATEMENT</b><span>' + U.fmtDate(new Date().toISOString(), "long") + '</span></div></div>' +
+      '<div class="doc-rows"><div><span>Client</span><b>' + U.escape(c.fullName) + '</b></div>' +
+      '<div><span>Phone</span><b>' + U.escape(c.phone) + '</b></div>' +
+      (c.email ? '<div><span>Email</span><b>' + U.escape(c.email) + '</b></div>' : "") +
+      '<div><span>NRC</span><b>' + U.escape(c.nrc || "—") + '</b></div>' +
+      '<div><span>Outstanding balance</span><b>' + U.money(c.outstanding) + '</b></div>' +
+      '<div><span>Paid to date</span><b>' + U.money(c.paidTotal) + '</b></div></div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:12px"><thead><tr>' +
+      ['Date', 'Type', 'Reference', 'Details', 'Amount', 'Status'].map(function (h) {
+        return '<th style="text-align:left;border-bottom:1px solid #999;padding:5px 4px">' + h + '</th>';
+      }).join("") + '</tr></thead><tbody>' +
+      rows.map(function (r) {
+        return '<tr><td style="padding:4px">' + U.fmtDate(r.when) + '</td><td style="padding:4px">' + r.kind + '</td>' +
+          '<td style="padding:4px">' + U.escape(r.ref) + '</td><td style="padding:4px">' + U.escape(r.detail) + '</td>' +
+          '<td style="padding:4px;text-align:right">' + (r.amount != null ? U.money(r.amount) : "—") + '</td>' +
+          '<td style="padding:4px">' + r.status + '</td></tr>';
+      }).join("") + '</tbody></table>' +
+      '<p class="doc-note">This statement is generated from the office records. Payments marked pending are awaiting verification. ' +
+      'Questions: ' + B.phoneDisplay + '.</p>';
   };
 
   /* ---------------- payment modal ---------------- */
@@ -3951,6 +4558,7 @@ html, body { overflow-x: hidden; }
             '<div class="brand-coin" style="margin:0 auto 14px;width:60px;height:60px;font-size:1.9rem">✓</div>' +
             "<h3 style='margin-bottom:4px'>Thank you, " + U.escape(user.fullName.split(" ")[0]) + "!</h3>" +
             '<p class="muted">Your application <b>' + application.ref + "</b> is now with our team. We review applications during business hours.</p>" +
+            (user.email ? '<p class="tiny" style="color:var(--ok)">A confirmation has been emailed to <b>' + U.escape(user.email) + "</b>.</p>" : "") +
             '<div style="background:var(--emerald-soft);border:1px dashed var(--emerald-3);border-radius:14px;padding:16px;margin:16px 0">' +
             '<div class="tiny muted" style="letter-spacing:.14em">YOUR TRACKING CODE</div>' +
             '<div style="font-family:var(--serif);font-size:1.5rem;font-weight:800;letter-spacing:.05em;color:var(--emerald-3)" id="newCode">' + application.accessCode + "</div>" +
@@ -4114,6 +4722,7 @@ html, body { overflow-x: hidden; }
       '<form id="regForm" novalidate>' +
       '<div class="field"><label for="rName">Full name</label><input type="text" id="rName" maxlength="80" placeholder="e.g. Mwila Chileshe" autocomplete="name"></div>' +
       '<div class="field mt-2"><label for="rPhone">Phone number</label><input type="tel" id="rPhone" placeholder="0971234567" autocomplete="tel"><div class="hint">We use this to identify you and send reminders.</div></div>' +
+      '<div class="field mt-2"><label for="rEmail">Email address <span class="req">*</span></label><input type="email" id="rEmail" placeholder="you@example.com" autocomplete="email"><div class="hint">Your confirmation and receipts are emailed here.</div></div>' +
       '<div class="form-grid mt-2" style="gap:12px">' +
       '<div class="field"><label for="rPin">Create PIN (4–6 digits)</label><input type="password" id="rPin" inputmode="numeric" maxlength="6" placeholder="••••"></div>' +
       '<div class="field"><label for="rPin2">Confirm PIN</label><input type="password" id="rPin2" inputmode="numeric" maxlength="6" placeholder="••••"></div>' +
@@ -4134,6 +4743,7 @@ html, body { overflow-x: hidden; }
       var r = CI.Auth.register({
         fullName: document.getElementById("rName").value,
         phone: document.getElementById("rPhone").value,
+        email: document.getElementById("rEmail").value,
         pin: document.getElementById("rPin").value,
         confirmPin: document.getElementById("rPin2").value
       });
@@ -4583,6 +5193,12 @@ html, body { overflow-x: hidden; }
       "<h3 style='margin-bottom:2px'>" + U.escape(user.fullName) + "</h3>" +
       '<div class="small muted">' + U.escape(user.phone) + "</div>" +
       '<div class="tiny muted mt-1">Member since ' + U.fmtDate(user.createdAt) + "</div></div>" +
+      '<div class="card card-pad mt-2"><h4 style="margin-top:0">Email confirmations</h4>' +
+      '<p class="small" style="margin:0 0 8px">' + (user.email ? "We send your confirmations and receipts to <b>" + U.escape(user.email) + "</b>." : "Add an email address so we can send confirmations and receipts.") + "</p>" +
+      '<div class="field"><label for="pEmailQuick">Email address</label><input type="email" id="pEmailQuick" value="' + U.escape(user.email || "") + '" placeholder="you@example.com"></div>' +
+      '<button class="btn btn-outline btn-block mt-2" id="pEmailSave">Save email</button>' +
+      (CI.Mail.enabled() ? '<p class="tiny" style="margin:8px 0 0;color:var(--ok)">● Email confirmations are on</p>' : '<p class="tiny muted" style="margin:8px 0 0">● Email confirmations are not switched on by the office yet</p>') +
+      "</div>" +
       '<div class="card card-pad mt-2"><h4 style="margin-top:0">App &amp; data</h4>' +
       '<div class="sync-status" id="profSyncStatus"></div>' +
       '<button class="btn btn-outline btn-block" id="profSync" style="margin-bottom:8px">' + UI.icon("refresh") + " Sync now</button>" +
@@ -4629,6 +5245,17 @@ html, body { overflow-x: hidden; }
       document.getElementById("pinNew").value = "";
       document.getElementById("pinNew2").value = "";
       UI.toast("PIN updated successfully.", "ok");
+    };
+
+    var emailSave = document.getElementById("pEmailSave");
+    if (emailSave) emailSave.onclick = function () {
+      var v = document.getElementById("pEmailQuick").value.trim();
+      if (!CI.Mail.validEmail(v)) return UI.toast("Enter a valid email address.", "warn");
+      user.email = v;
+      user.updatedAt = new Date().toISOString();
+      Store.save();
+      UI.toast("Email saved. Confirmations will go to " + v + ".", "ok");
+      CI.App.render();
     };
 
     (function renderSyncStatus() {
@@ -4705,6 +5332,930 @@ html, body { overflow-x: hidden; }
       "</div></div>";
     CI.UI.renderChrome();
   };
+})();
+
+
+/* ===== grid.js ===== */
+/* ==========================================================================
+   DIGITAL LIST — the staff spreadsheet tab
+
+   A free-form table the office can fill in exactly like the paper / Excel list
+   they already keep: No · Names · Amount · Interest · Numbers · Collateral ·
+   Date · Due Date. Columns and rows can be added, renamed, re-ordered and
+   removed at any time, and everything syncs to Supabase so every staff phone
+   sees the same list.
+
+   Data shape (stored in Store.state.sheets):
+     { id, name, note,
+       columns: [{ id, name, type }],       // type: auto | text | money | date
+       rows:    [{ id, cells: { colId: value } }],
+       createdAt, updatedAt, deleted }
+   ========================================================================== */
+(function () {
+  "use strict";
+  var U = CI.U, UI = CI.UI, Store = CI.Store;
+  var Grid = {};
+  CI.Grid = Grid;
+
+  var DEFAULT_COLUMNS = [
+    { name: "No", type: "auto" },
+    { name: "Names", type: "text" },
+    { name: "Amount", type: "money" },
+    { name: "Interest", type: "money" },
+    { name: "Numbers", type: "text" },
+    { name: "Collateral", type: "text" },
+    { name: "Date", type: "text" },
+    { name: "Due Date", type: "text" }
+  ];
+
+
+  /* ---------------------------------------------------------------
+     THE OFFICE'S OWN LIST
+     Typed in from the sheet the office keeps: "CHILESHE INNOVATIONS -
+     FINAL DIGITAL LIST" (Mr Mwaba due 16-11-26, corrected). Row numbers are
+     kept exactly as printed — the sheet has no entry numbered 17.
+     --------------------------------------------------------------- */
+  var SEED_ID = "sh_final_digital_2026_10_19";
+  var SEED_UPDATED = "2026-10-19T06:00:00.000Z";   // older than any real edit
+  var SEED_COLUMNS = [
+    { id: "c_no",         name: "No",         type: "text"  },
+    { id: "c_names",      name: "Names",      type: "text"  },
+    { id: "c_amount",     name: "Amount",     type: "money" },
+    { id: "c_interest",   name: "Interest",   type: "money" },
+    { id: "c_numbers",    name: "Numbers",    type: "text"  },
+    { id: "c_collateral", name: "Collateral", type: "text"  },
+    { id: "c_date",       name: "Date",       type: "text"  },
+    { id: "c_due",        name: "Due Date",   type: "text"  }
+  ];
+  var SEED_ROWS = [
+    ["1",  "Mr Zocs",      "6000", "3000", "097706054",  "CAR",       "12-09",  "12-10-26"],
+    ["2",  "Bike",         "6000", "3000", "0974111890", "Moto bike", "14 DAY", ""],
+    ["3",  "Mr Kalsoma",   "500",  "250",  "077430681",  "TV 32\"",   "26-09",  "26-10-26"],
+    ["4",  "Mr Chisowa",   "500",  "250",  "097706054",  "TV 32\"",   "05-09",  "05-10-26"],
+    ["5",  "Mr Tembo",     "300",  "150",  "0974361616", "TV 32\"",   "26-09",  "28-10-26"],
+    ["6",  "Mr Katanga",   "500",  "100",  "077744318",  "Phone",     "25-09",  "25-10-26"],
+    ["7",  "Mr Alex",      "300",  "150",  "0974225554", "Bike",      "01-09",  "01-10-26"],
+    ["8",  "Mrs Naomi",    "500",  "250",  "0773744888", "TV Stand",  "02-09",  "02-10-26"],
+    ["9",  "Mrs Meery",    "100",  "50",   "0777104277", "TV 42\"",   "26-09",  "26-10-26"],
+    ["10", "Mr Keazo",     "250",  "175",  "0973557656", "Fridge",    "25-09",  "25-10-26"],
+    ["11", "Mr Bazembe",   "500",  "250",  "0768477740", "Phone",     "29-09",  "29-10-26"],
+    ["12", "Mr Tembo G",   "500",  "250",  "0774341329", "Fridge",    "29-09",  "29-10-26"],
+    ["13", "Mr Jones",     "150",  "75",   "0978217711", "Phone",     "05-10",  "05-11-26"],
+    ["14", "Mr Dalse",     "800",  "400",  "0777388998", "Phone",     "12-10",  "12-11-26"],
+    ["15", "Mr Sylvester", "700",  "350",  "0776400744", "Phone",     "10-10",  "10-11-26"],
+    ["16", "Mrs Ruth",     "500",  "250",  "0779279677", "Phone",     "10-10",  "10-11-26"],
+    ["18", "Mr Sydney",    "750",  "375",  "0772513308", "Bike",      "13-10",  "13-11-26"],
+    ["19", "Mrs Ruth",     "500",  "250",  "0970117660", "TV 55",     "14-10",  "14-11-26"],
+    ["20", "Mr Jacob",     "1000", "500",  "0975265326", "Phone",     "12-10",  "12-11-26"],
+    ["21", "Mrs Ruth",     "500",  "250",  "0979917984", "Phone",     "13-10",  "16-10-26"],
+    ["22", "Mrs Serah",    "300",  "150",  "0974151388", "Phone",     "16-10",  "27-10-26"],
+    ["23", "Mr Mwaba",     "500",  "250",  "0973567878", "Phone",     "16-10",  "16-11-26"]
+  ];
+
+  function seedSheet() {
+    var rows = SEED_ROWS.map(function (r) {
+      var cells = {};
+      SEED_COLUMNS.forEach(function (c, i) { if (r[i] !== "") cells[c.id] = r[i]; });
+      return { id: "r_" + r[0], cells: cells };
+    });
+    return {
+      id: SEED_ID,
+      name: "FINAL DIGITAL LIST",
+      note: "Mr Mwaba Due 16-11-26 Corrected - Mr Zocs CAR - Gabriel 0774341329",
+      seed: true,
+      columns: SEED_COLUMNS.map(function (c) { return { id: c.id, name: c.name, type: c.type }; }),
+      rows: rows,
+      createdAt: SEED_UPDATED,
+      updatedAt: SEED_UPDATED
+    };
+  }
+
+  var currentId = null;
+  var saveTimer = null;
+  var pushTimer = null;
+  var syncState = "local";   // local | synced | no-sql | offline
+
+  /* ---------------------------------------------------------------
+     HELPERS
+     --------------------------------------------------------------- */
+  function nowISO() { return new Date().toISOString(); }
+  function nid(p) { return (p || "x") + "_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3); }
+
+  function sheetList() {
+    var st = Store.state;
+    if (!Array.isArray(st.sheets)) st.sheets = [];
+    return st.sheets;
+  }
+  Grid.all = function () { return sheetList().filter(function (s) { return !s.deleted; }); };
+
+  Grid.ensure = function () {
+    var list = Grid.all();
+
+    // Phones that used the previous build made an empty placeholder list.
+    // Fill it with the office's real entries instead of leaving a blank sheet.
+    if (list.length === 1 && list[0].seed && !(list[0].rows || []).length) {
+      var oldId = list[0].id;
+      var fresh = seedSheet();
+      var idx = sheetList().findIndex(function (x) { return x.id === oldId; });
+      if (idx !== -1) sheetList()[idx] = fresh;
+      // retire the old (empty) copy in the database so it cannot come back on another phone
+      if (oldId !== SEED_ID) {
+        sheetList().push({ id: oldId, deleted: true, updatedAt: nowISO(), name: list[0].name });
+      }
+      Store.save();
+      currentId = SEED_ID;
+      if (CI.Backend && CI.Backend.pushSheets) setTimeout(function () { Grid.push(); }, 1200);
+      return Grid.current();
+    }
+
+    if (!list.length) {
+      // Only bring the office list back if it was never deliberately deleted.
+      var killed = sheetList().some(function (x) { return x.id === SEED_ID && x.deleted; });
+      var s;
+      if (!killed) {
+        s = seedSheet();
+      } else {
+        s = {
+          id: nid("sh"),
+          name: "New list",
+          note: "",
+          seed: true,
+          columns: DEFAULT_COLUMNS.map(function (c) { return { id: nid("c"), name: c.name, type: c.type }; }),
+          rows: [],
+          createdAt: nowISO(),
+          updatedAt: nowISO()
+        };
+      }
+      sheetList().push(s);
+      Store.save();
+      currentId = s.id;
+      return s;
+    }
+    if (!currentId || !list.some(function (s) { return s.id === currentId; })) currentId = list[0].id;
+    return Grid.current();
+  };
+
+  Grid.current = function () {
+    var list = Grid.all();
+    return list.filter(function (s) { return s.id === currentId; })[0] || list[0] || null;
+  };
+
+  Grid.setCurrent = function (id) { currentId = id; };
+
+  function touch(sheet) {
+    sheet.updatedAt = nowISO();
+    // keep the tab's own copy in the shared store
+    var i = sheetList().findIndex(function (s) { return s.id === sheet.id; });
+    if (i === -1) sheetList().push(sheet); else sheetList()[i] = sheet;
+  }
+
+  function saveLocal(sheet) {
+    sheet.seed = false;      // it now holds the office's own work — never throw it away
+    touch(sheet);
+    Store.save();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      if (CI.Backend && CI.Backend.pushSheets) {
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(function () { Grid.push(); }, 900);
+      }
+    }, 250);
+  }
+
+  /** Value of one cell, trimmed. */
+  function cellVal(sheet, row, col) {
+    if (col.type === "auto") return "";
+    var v = (row.cells || {})[col.id];
+    return v == null ? "" : String(v);
+  }
+
+  function num(v) {
+    var n = parseFloat(String(v == null ? "" : v).replace(/[^\d.\-]/g, ""));
+    return isFinite(n) ? n : 0;
+  }
+  Grid.num = num;
+
+  /** Keep only digits and at most one decimal point, so "0977 060 054" typed
+   *  into a money column can never silently become billions. */
+  function cleanMoney(v) {
+    var s = String(v == null ? "" : v).replace(/[^\d.]/g, "");
+    var i = s.indexOf(".");
+    if (i !== -1) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, "");
+    return s;
+  }
+  /** 6000 -> "6,000" (only applied when the field loses focus). */
+  function formatMoney(v) {
+    var s = cleanMoney(v);
+    if (!s) return "";
+    var parts = s.split(".");
+    var whole = parts[0].replace(/^0+(?=\d)/, "");
+    whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return whole + (parts.length > 1 ? "." + parts[1] : "");
+  }
+  Grid.cleanMoney = cleanMoney;
+
+  function money0(n) { return "K" + (Math.round(n * 100) / 100).toLocaleString("en-ZM"); }
+
+  function columnTotals(sheet) {
+    var t = {};
+    sheet.columns.forEach(function (c) {
+      if (c.type !== "money") return;
+      t[c.id] = sheet.rows.reduce(function (a, r) { return a + num(cellVal(sheet, r, c)); }, 0);
+    });
+    return t;
+  }
+  Grid.totals = columnTotals;
+
+  /* ---------------------------------------------------------------
+     SYNC
+     --------------------------------------------------------------- */
+  Grid.push = function () {
+    if (!CI.Backend || !CI.Backend.pushSheets || !CI.Backend.enabled()) { syncState = "offline"; paintSyncState(); return Promise.resolve(false); }
+    var payload = Grid.all().map(function (s) {
+      return { id: s.id, name: s.name, note: s.note, columns: s.columns, rows: s.rows, createdAt: s.createdAt, updatedAt: s.updatedAt, deleted: false };
+    });
+    // tombstones travel too, so a delete reaches the other phones
+    sheetList().forEach(function (s) { if (s.deleted) payload.push({ id: s.id, deleted: true, updatedAt: s.updatedAt }); });
+
+    return CI.Backend.pushSheets(payload).then(function (r) {
+      if (r && r.ok === false) {
+        syncState = /could not find the function|does not exist|schema cache/i.test(r.error || "") ? "no-sql" : "offline";
+      } else {
+        syncState = "synced";
+      }
+      paintSyncState();
+      return true;
+    }).catch(function (err) {
+      syncState = /could not find the function|does not exist/i.test(String(err && err.message || "")) ? "no-sql" : "offline";
+      paintSyncState();
+      return false;
+    });
+  };
+
+  Grid.pull = function () {
+    if (!CI.Backend || !CI.Backend.pullSheets || !CI.Backend.enabled()) return Promise.resolve(false);
+    return CI.Backend.pullSheets().then(function (r) {
+      if (r && r.ok === false) {
+        syncState = /could not find the function|does not exist|schema cache/i.test(r.error || "") ? "no-sql" : "offline";
+        paintSyncState();
+        return false;
+      }
+      var remote = (r && r.sheets) || [];
+      var local = sheetList();
+      var changed = false;
+
+      // First sync on a fresh phone: it made an empty placeholder on first open.
+      // Drop that so the office's real list becomes THE list, instead of leaving
+      // the staff member staring at their own blank one.
+      var real = local.filter(function (s) { return !s.deleted; });
+      if (real.length === 1 && real[0].seed && !(real[0].rows || []).length && remote.length) {
+        var seedId = real[0].id;
+        if (!remote.some(function (rs) { return rs.id === seedId; })) {
+          Store.state.sheets = local.filter(function (s) { return s.id !== seedId; });
+          local = Store.state.sheets;
+          currentId = null;
+          changed = true;
+        }
+      }
+
+      remote.forEach(function (rs) {
+        if (!rs || !rs.id) return;
+        var mine = local.filter(function (s) { return s.id === rs.id; })[0];
+        if (!mine) {
+          local.push(rs);
+          changed = true;
+          return;
+        }
+        // newest edit wins, per list (same rule as the rest of the app)
+        if (new Date(rs.updatedAt || 0) > new Date(mine.updatedAt || 0)) {
+          Object.keys(rs).forEach(function (k) { mine[k] = rs[k]; });
+          changed = true;
+        }
+      });
+      if (changed) { Store.save(); syncState = "synced"; if (Grid.onPull) Grid.onPull(); }
+      else if (syncState !== "no-sql") syncState = "synced";
+      paintSyncState();
+      return changed;
+    }).catch(function (err) {
+      syncState = /could not find the function|does not exist/i.test(String(err && err.message || "")) ? "no-sql" : "offline";
+      paintSyncState();
+      return false;
+    });
+  };
+
+  function paintSyncState() {
+    var el = document.getElementById("gridSync");
+    if (!el) return;
+    var map = {
+      synced: ["var(--ok)", "● Synced — every staff phone sees this list"],
+      local: ["var(--muted)", "● Saved on this phone"],
+      offline: ["var(--warn)", "● Saved on this phone — will sync when back online"],
+      "no-sql": ["var(--warn)", "● Not syncing yet — run PASTE-IN-SUPABASE.sql once to share this list"]
+    };
+    var m = map[syncState] || map.local;
+    el.style.color = m[0];
+    el.textContent = m[1];
+  }
+  Grid.syncState = function () { return syncState; };
+
+  /* A pull that changed something should refresh the screen — unless the staff
+     member is in the middle of typing a cell or has a dialog open. */
+  Grid.onPull = function () {
+    var route = String(location.hash || "").replace(/^#/, "");
+    if (route !== "/admin/book") return;
+    var ae = document.activeElement;
+    if (ae && ae.className && String(ae.className).indexOf("g-input") !== -1) return;
+    if (document.querySelector(".modal.open")) return;
+    Grid.page();
+  };
+
+  /* ---------------------------------------------------------------
+     ROW / COLUMN OPERATIONS
+     --------------------------------------------------------------- */
+  Grid.addRow = function (at) {
+    var s = Grid.ensure();
+    var row = { id: nid("r"), cells: {} };
+    if (typeof at === "number" && at >= 0 && at <= s.rows.length) s.rows.splice(at, 0, row);
+    else s.rows.push(row);
+    saveLocal(s);
+    return row;
+  };
+
+  Grid.deleteRow = function (rowId) {
+    var s = Grid.current();
+    s.rows = s.rows.filter(function (r) { return r.id !== rowId; });
+    saveLocal(s);
+  };
+
+  Grid.moveRow = function (rowId, dir) {
+    var s = Grid.current();
+    var i = s.rows.findIndex(function (r) { return r.id === rowId; });
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= s.rows.length) return;
+    var t = s.rows[i]; s.rows[i] = s.rows[j]; s.rows[j] = t;
+    saveLocal(s);
+  };
+
+  Grid.duplicateRow = function (rowId) {
+    var s = Grid.current();
+    var i = s.rows.findIndex(function (r) { return r.id === rowId; });
+    if (i < 0) return;
+    var copy = { id: nid("r"), cells: JSON.parse(JSON.stringify(s.rows[i].cells || {})) };
+    s.rows.splice(i + 1, 0, copy);
+    saveLocal(s);
+  };
+
+  Grid.addColumn = function (name, type) {
+    var s = Grid.ensure();
+    s.columns.push({ id: nid("c"), name: name || "New column", type: type || "text" });
+    saveLocal(s);
+    return s.columns[s.columns.length - 1];
+  };
+
+  Grid.deleteColumn = function (colId) {
+    var s = Grid.current();
+    s.columns = s.columns.filter(function (c) { return c.id !== colId; });
+    s.rows.forEach(function (r) { if (r.cells) delete r.cells[colId]; });
+    saveLocal(s);
+  };
+
+  Grid.renameColumn = function (colId, name, type) {
+    var s = Grid.current();
+    var c = s.columns.filter(function (x) { return x.id === colId; })[0];
+    if (!c) return;
+    c.name = String(name || "").trim() || c.name;
+    if (type) c.type = type;
+    saveLocal(s);
+  };
+
+  Grid.moveColumn = function (colId, dir) {
+    var s = Grid.current();
+    var i = s.columns.findIndex(function (c) { return c.id === colId; });
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= s.columns.length) return;
+    var t = s.columns[i]; s.columns[i] = s.columns[j]; s.columns[j] = t;
+    saveLocal(s);
+  };
+
+  Grid.setCell = function (rowId, colId, value) {
+    var s = Grid.current();
+    var r = s.rows.filter(function (x) { return x.id === rowId; })[0];
+    if (!r) return;
+    if (!r.cells) r.cells = {};
+    r.cells[colId] = value;
+    saveLocal(s);
+  };
+
+  /* ---------------------------------------------------------------
+     SHEETS (several lists)
+     --------------------------------------------------------------- */
+  Grid.newSheet = function (name) {
+    var s = {
+      id: nid("sh"),
+      name: name || "New list",
+      note: "",
+      columns: DEFAULT_COLUMNS.map(function (c) { return { id: nid("c"), name: c.name, type: c.type }; }),
+      rows: [],
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    };
+    sheetList().push(s);
+    currentId = s.id;
+    saveLocal(s);
+    return s;
+  };
+
+  Grid.renameSheet = function (name, note) {
+    var s = Grid.ensure();
+    s.name = String(name || "").trim() || s.name;
+    if (note !== undefined) s.note = note;
+    saveLocal(s);
+  };
+
+  Grid.deleteSheet = function (id) {
+    var s = sheetList().filter(function (x) { return x.id === id; })[0];
+    if (!s) return;
+    s.deleted = true;
+    s.updatedAt = nowISO();
+    var rest = Grid.all();
+    currentId = rest.length ? rest[0].id : null;
+    Store.save();
+    if (CI.Backend && CI.Backend.pushSheets) Grid.push();
+  };
+
+  Grid.duplicateSheet = function (id) {
+    var src = sheetList().filter(function (x) { return x.id === id; })[0];
+    if (!src) return;
+    var copy = JSON.parse(JSON.stringify(src));
+    copy.id = nid("sh");
+    copy.name = src.name + " (copy)";
+    copy.createdAt = copy.updatedAt = nowISO();
+    copy.columns.forEach(function (c) { c.id = nid("c"); });
+    // remap cell keys to the new column ids
+    var map = {};
+    src.columns.forEach(function (c, i) { map[c.id] = copy.columns[i].id; });
+    copy.rows.forEach(function (r) {
+      var cells = {};
+      Object.keys(r.cells || {}).forEach(function (k) { if (map[k]) cells[map[k]] = r.cells[k]; });
+      r.id = nid("r");
+      r.cells = cells;
+    });
+    sheetList().push(copy);
+    currentId = copy.id;
+    saveLocal(copy);
+    return copy;
+  };
+
+  /* ---------------------------------------------------------------
+     EXPORT
+     --------------------------------------------------------------- */
+  function csvCell(v) {
+    var s = String(v == null ? "" : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  Grid.toCSV = function () {
+    var s = Grid.ensure();
+    var head = s.columns.map(function (c) { return csvCell(c.name); }).join(",");
+    var body = s.rows.map(function (r, i) {
+      return s.columns.map(function (c) {
+        return csvCell(c.type === "auto" ? i + 1 : cellVal(s, r, c));
+      }).join(",");
+    });
+    return [head].concat(body).join("\r\n");
+  };
+
+  Grid.toText = function () {
+    var s = Grid.ensure();
+    var head = s.columns.map(function (c) { return c.name; });
+    var lines = s.rows.map(function (r, i) {
+      return s.columns.map(function (c) {
+        return c.type === "auto" ? String(i + 1) : cellVal(s, r, c);
+      });
+    });
+    var widths = head.map(function (h, i) {
+      return Math.max(h.length, Math.max.apply(null, lines.map(function (l) { return l[i].length; }).concat([0])));
+    });
+    var pad = function (t, w) { return t + new Array(Math.max(1, w - t.length + 1)).join(" "); };
+    var out = [head.map(function (h, i) { return pad(h, widths[i]); }).join("  ")];
+    out.push(widths.map(function (w) { return new Array(w + 1).join("-"); }).join("  "));
+    lines.forEach(function (l) { out.push(l.map(function (t, i) { return pad(t, widths[i]); }).join("  ")); });
+    return out.join("\n");
+  };
+
+  function stamp() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  Grid.exportCSV = function () {
+    var s = Grid.ensure();
+    U.download("Chileshe-" + (s.name || "list").replace(/[^a-z0-9]+/gi, "-") + "-" + stamp() + ".csv", "\ufeff" + Grid.toCSV(), "text/csv;charset=utf-8");
+    UI.toast("CSV downloaded — it opens in Excel.", "ok");
+  };
+
+  /** Clean printable page — the app's own print CSS hides the console, so this
+   *  builds a standalone document and prints that instead. */
+  Grid.printableHTML = function () {
+    var s = Grid.ensure();
+    var head = s.columns.map(function (c) { return "<th>" + U.escape(c.name) + "</th>"; }).join("");
+    var body = s.rows.map(function (r, i) {
+      return "<tr>" + s.columns.map(function (c) {
+        var v = c.type === "auto" ? String(i + 1) : cellVal(s, r, c);
+        return "<td" + (c.type === "money" ? ' class="r"' : "") + ">" + U.escape(v) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    var tot = columnTotals(s);
+    var hasMoney = s.columns.some(function (c) { return c.type === "money"; });
+    var foot = hasMoney
+      ? "<tr class='tot'>" + s.columns.map(function (c) {
+        if (c.type === "money") return "<td class='r'>" + money0(tot[c.id] || 0) + "</td>";
+        return "<td>" + (c === s.columns[0] ? "TOTAL" : "") + "</td>";
+      }).join("") + "</tr>"
+      : "";
+    return "<!doctype html><meta charset='utf-8'><title>" + U.escape(s.name) + "</title><style>" +
+      "body{font-family:Arial,Helvetica,sans-serif;max-width:1000px;margin:26px auto;color:#17231E;font-size:12px}" +
+      "h1{font-size:17px;margin:0;letter-spacing:.02em}h2{font-size:12px;font-weight:400;color:#555;margin:6px 0 16px}" +
+      ".brand{font-weight:800;color:#0B4F3C}table{width:100%;border-collapse:collapse}" +
+      "th,td{border:1px solid #999;padding:5px 6px;text-align:left;font-size:11.5px}" +
+      "th{background:#e9e9e9;font-weight:700}td.r,th.r{text-align:right}" +
+      ".tot td{background:#f4f4f4;font-weight:700}.foot{margin-top:14px;font-size:10.5px;color:#666}" +
+      "@page{margin:12mm}" +
+      "</style><div class='brand'>CHILESHE INNOVATIONS MONEY LENDERS</div>" +
+      "<h1>" + U.escape(s.name) + "</h1>" +
+      (s.note ? "<h2>" + U.escape(s.note) + "</h2><h2></h2>" : "") +
+      "<table><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody>" +
+      (foot ? "<tfoot>" + foot + "</tfoot>" : "") + "</table>" +
+      "<p class='foot'>Printed " + new Date().toLocaleString() + " · " + s.rows.length + " entries · 0772 742 481</p>";
+  };
+
+  Grid.print = function () {
+    var html = Grid.printableHTML();
+    var w = window.open("", "_blank");
+    if (!w) {
+      U.download("Chileshe-" + (Grid.ensure().name || "list") + ".html", html, "text/html");
+      UI.toast("Pop-up blocked — the printable file was downloaded instead.", "warn", 5000);
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 350);
+  };
+
+  Grid.shareWhatsApp = function () {
+    var s = Grid.ensure();
+    var text = s.name + (s.note ? "\n" + s.note : "") + "\n\n" + Grid.toText();
+    var url = "https://wa.me/" + (CI.Config.business.whatsapp || "260772742481") + "?text=" + encodeURIComponent(text.slice(0, 3500));
+    window.open(url, "_blank", "noopener");
+  };
+
+  /* ---------------------------------------------------------------
+     SCREEN
+     --------------------------------------------------------------- */
+  var TYPES = [["text", "Text"], ["money", "Money (K)"], ["date", "Date"], ["auto", "Row number"]];
+
+  function typeLabel(t) {
+    return (TYPES.filter(function (x) { return x[0] === t; })[0] || ["text", "Text"])[1];
+  }
+
+  function headerMenu(colId) {
+    var s = Grid.current();
+    var c = s.columns.filter(function (x) { return x.id === colId; })[0];
+    if (!c) return;
+    UI.openModal("Column: " + c.name,
+      '<div class="field"><label for="colName">Column name</label><input type="text" id="colName" value="' + U.escape(c.name) + '" maxlength="40"></div>' +
+      '<div class="field mt-2"><label for="colType">What goes in it</label><select id="colType">' +
+        TYPES.map(function (t) { return '<option value="' + t[0] + '"' + (c.type === t[0] ? " selected" : "") + ">" + t[1] + "</option>"; }).join("") +
+      "</select></div>" +
+      '<p class="tiny muted mt-2">Money columns add up automatically at the bottom of the table.</p>',
+      '<button class="btn btn-outline" data-close-modal>Cancel</button>' +
+      '<button class="btn btn-danger" id="colDel">Delete column</button>' +
+      '<button class="btn btn-outline" id="colLeft">Move left</button>' +
+      '<button class="btn btn-outline" id="colRight">Move right</button>' +
+      '<button class="btn btn-primary" id="colSave">Save</button>');
+
+    document.getElementById("colSave").onclick = function () {
+      Grid.renameColumn(colId, document.getElementById("colName").value, document.getElementById("colType").value);
+      UI.closeModal();
+      Grid.page();
+    };
+    document.getElementById("colLeft").onclick = function () { Grid.moveColumn(colId, -1); UI.closeModal(); Grid.page(); };
+    document.getElementById("colRight").onclick = function () { Grid.moveColumn(colId, 1); UI.closeModal(); Grid.page(); };
+    document.getElementById("colDel").onclick = function () {
+      UI.closeModal();
+      UI.confirm({
+        title: "Delete the “" + c.name + "” column?",
+        text: "The values in this column are removed from every row, on every staff phone.",
+        ok: "Delete column", danger: true
+      }).then(function (yes) { if (yes) { Grid.deleteColumn(colId); Grid.page(); } });
+    };
+  }
+
+  function addColumnDialog() {
+    UI.openModal("Add a column",
+      '<div class="field"><label for="colName">Column name</label><input type="text" id="colName" placeholder="e.g. Balance, Notes, ID number" maxlength="40" autofocus></div>' +
+      '<div class="field mt-2"><label for="colType">What goes in it</label><select id="colType">' +
+        TYPES.filter(function (t) { return t[0] !== "auto"; }).map(function (t) { return '<option value="' + t[0] + '">' + t[1] + "</option>"; }).join("") +
+      "</select></div>",
+      '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="colAdd">Add column</button>');
+    document.getElementById("colAdd").onclick = function () {
+      var name = document.getElementById("colName").value.trim();
+      if (!name) return UI.toast("Give the column a name.", "warn");
+      Grid.addColumn(name, document.getElementById("colType").value);
+      UI.closeModal();
+      Grid.page();
+    };
+  }
+
+  function rowMenu(rowId) {
+    var s = Grid.current();
+    var i = s.rows.findIndex(function (r) { return r.id === rowId; });
+    UI.openModal("Row " + (i + 1),
+      '<div class="flex" style="flex-wrap:wrap;gap:8px">' +
+        '<button class="btn btn-outline btn-sm" id="rowAbove">' + UI.icon("plus") + " Insert above</button>" +
+        '<button class="btn btn-outline btn-sm" id="rowBelow">' + UI.icon("plus") + " Insert below</button>" +
+        '<button class="btn btn-outline btn-sm" id="rowCopy">Duplicate</button>' +
+        '<button class="btn btn-outline btn-sm" id="rowUp">Move up</button>' +
+        '<button class="btn btn-outline btn-sm" id="rowDown">Move down</button>' +
+      "</div>",
+      '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-danger" id="rowDel">Delete row</button>');
+    var close = function () { UI.closeModal(); Grid.page(); };
+    document.getElementById("rowAbove").onclick = function () { Grid.addRow(i); close(); };
+    document.getElementById("rowBelow").onclick = function () { Grid.addRow(i + 1); close(); };
+    document.getElementById("rowCopy").onclick = function () { Grid.duplicateRow(rowId); close(); };
+    document.getElementById("rowUp").onclick = function () { Grid.moveRow(rowId, -1); close(); };
+    document.getElementById("rowDown").onclick = function () { Grid.moveRow(rowId, 1); close(); };
+    document.getElementById("rowDel").onclick = function () {
+      UI.closeModal();
+      UI.confirm({ title: "Delete this row?", text: "Everything typed in this row is removed on every staff phone.", ok: "Delete row", danger: true })
+        .then(function (yes) { if (yes) { Grid.deleteRow(rowId); Grid.page(); } });
+    };
+  }
+
+  function listDialog() {
+    var s = Grid.ensure();
+    UI.openModal("This list",
+      '<div class="field"><label for="lstName">Title</label><input type="text" id="lstName" value="' + U.escape(s.name) + '" maxlength="70"></div>' +
+      '<div class="field mt-2"><label for="lstNote">Sub-title / note (optional)</label><input type="text" id="lstNote" value="' + U.escape(s.note || "") + '" maxlength="120" placeholder="e.g. Mr Mwaba due 16-11-26 · corrected"></div>' +
+      '<p class="tiny muted mt-2">Both lines are printed at the top of the sheet and included in exports.</p>',
+      '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="lstSave">Save</button>');
+    document.getElementById("lstSave").onclick = function () {
+      Grid.renameSheet(document.getElementById("lstName").value, document.getElementById("lstNote").value);
+      UI.closeModal();
+      Grid.page();
+    };
+  }
+
+  /** Paste straight from Excel, WhatsApp or a paper list: one row per line,
+   *  fields split by TAB, comma or two-or-more spaces. */
+  function pasteDialog() {
+    UI.openModal("Paste rows",
+      '<p class="tiny muted" style="margin:0 0 8px">Copy the list from Excel, WhatsApp or a text file and paste it here — one row per line. ' +
+      "Columns are separated by a tab, a comma, or two spaces. The first line may be headings; they are skipped automatically.</p>" +
+      '<textarea id="pasteBox" rows="8" style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;padding:10px;border-radius:10px;border:1px solid var(--line)" placeholder="Mr Zocs,6000,3000,097706054,CAR,12-09,12-10-26&#10;Bike,6000,3000,0974111890,Moto bike,14 DAY,"></textarea>' +
+      '<div class="field mt-2"><label for="pasteSkip">Columns to skip (optional)</label>' +
+      '<input type="text" id="pasteSkip" placeholder="e.g. 1 to skip a “No” number column" maxlength="20"></div>' +
+      '<p class="tiny muted mt-2">Rows are added to the end of this list. You can fix anything after pasting.</p>',
+      '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="pasteGo">Add rows</button>');
+
+    document.getElementById("pasteGo").onclick = function () {
+      var raw = document.getElementById("pasteBox").value || "";
+      var skip = (document.getElementById("pasteSkip").value || "").split(",").map(function (n) { return parseInt(n, 10) - 1; }).filter(function (n) { return n >= 0; });
+      var lines = raw.split(/\r?\n/).map(function (l) { return l.replace(/\s+$/, ""); }).filter(function (l) { return l.trim(); });
+      if (!lines.length) return UI.toast("Nothing pasted.", "warn");
+
+      var split = function (line) {
+        if (line.indexOf("\t") !== -1) return line.split("\t");
+        if (line.indexOf(",") !== -1) return line.split(",");
+        return line.split(/\s{2,}/);
+      };
+      var sheet = Grid.ensure();
+      var cols = sheet.columns.filter(function (c) { return c.type !== "auto"; });
+      var first = split(lines[0]).map(function (x) { return x.trim().toLowerCase(); });
+      var names = cols.map(function (c) { return c.name.toLowerCase(); });
+      var isHeading = first.filter(function (h) { return names.indexOf(h) !== -1; }).length >= 2;
+      var start = isHeading ? 1 : 0;
+      var added = 0;
+
+      for (var i = start; i < lines.length; i++) {
+        var parts = split(lines[i]);
+        var row = Grid.addRow();
+        var k = 0;
+        cols.forEach(function (c, ci) {
+          while (skip.indexOf(k) !== -1) k++;
+          var v = parts[k] == null ? "" : String(parts[k]).trim();
+          k++;
+          if (v) row.cells[c.id] = c.type === "money" ? cleanMoney(v) : v;
+        });
+        added++;
+      }
+      Grid.page();
+      UI.closeModal();
+      UI.toast(added + " row" + (added === 1 ? "" : "s") + " added.", "ok");
+    };
+  }
+
+  function newListDialog() {
+    UI.openModal("New list",
+      '<div class="field"><label for="nlName">Name</label><input type="text" id="nlName" placeholder="e.g. Week of 20 October" maxlength="70" autofocus></div>' +
+      '<p class="tiny muted mt-2">You get a fresh table with the standard columns. Lists are separate — deleting one never touches another.</p>',
+      '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="nlAdd">Create list</button>');
+    document.getElementById("nlAdd").onclick = function () {
+      var name = document.getElementById("nlName").value.trim() || "New list";
+      Grid.newSheet(name);
+      UI.closeModal();
+      Grid.page();
+    };
+  }
+
+  Grid.page = function () {
+    var s = Grid.ensure();
+    var totals = columnTotals(s);
+    var moneyCols = s.columns.filter(function (c) { return c.type === "money"; });
+    var lists = Grid.all();
+
+    var chips = lists.length > 1 ? '<div class="chip-tabs" style="margin-bottom:12px">' + lists.map(function (l) {
+      return '<button type="button" class="' + (l.id === s.id ? "active" : "") + '" data-list="' + l.id + '">' + U.escape(l.name) + " (" + l.rows.length + ")</button>";
+    }).join("") + "</div>" : "";
+
+    // column widths: money/date narrow, free text wide
+    var wsum = 0, weights = s.columns.map(function (c) {
+      var w = c.type === "auto" ? 0.5 : c.type === "money" ? 1.0 : c.type === "date" ? 1.1 : 1.6;
+      wsum += w; return w;
+    });
+    var colgroup = '<col style="width:34px">' + s.columns.map(function (c, i) {
+      return '<col style="width:' + (Math.round(weights[i] / wsum * 1000) / 10) + '%">';
+    }).join("") + '<col style="width:34px">';
+
+    var head = '<tr><th class="g-h"></th>' + s.columns.map(function (c) {
+      return '<th class="g-c' + (c.type === "money" ? " g-money" : "") + '" data-col="' + c.id + '">' +
+        "<button type='button' class='g-chname' data-colmenu='" + c.id + "' title='Rename, move or delete this column'>" +
+        U.escape(c.name) + (c.type === "money" ? ' <span class="g-type">K</span>' : c.type === "auto" ? ' <span class="g-type">#</span>' : "") +
+        "</button></th>";
+    }).join("") + '<th class="g-add"><button type="button" class="btn btn-sm btn-outline" id="addCol" title="Add a column">+</button></th></tr>';
+
+    var body = s.rows.map(function (r, i) {
+      var cells = s.columns.map(function (c) {
+        if (c.type === "auto") return '<td class="g-num">' + (i + 1) + "</td>";
+        var v = cellVal(s, r, c);
+        if (c.type === "money") v = formatMoney(v);
+        return "<td" + (c.type === "money" ? ' class="g-money"' : "") + ">" +
+          '<input class="g-input" data-row="' + r.id + '" data-col="' + c.id + '" value="' + U.escape(v) + '"' +
+          (c.type === "money" ? ' inputmode="decimal"' : "") +
+          ' aria-label="' + U.escape(c.name) + ", row " + (i + 1) + '">' +
+          "</td>";
+      }).join("");
+      return '<tr data-rowid="' + r.id + '"><td class="g-h"><button type="button" class="g-rowbtn" data-rowmenu="' + r.id + '" title="Row options">⋮</button></td>' +
+        cells + '<td class="g-add"></td></tr>';
+    }).join("");
+
+    var foot = "";
+    if (moneyCols.length && s.rows.length) {
+      foot = "<tfoot><tr><td class='g-h'></td>" + s.columns.map(function (c) {
+        if (c.type === "money") return '<td class="g-money g-total" data-total="' + c.id + '">' + money0(totals[c.id] || 0) + "</td>";
+        return "<td>" + (c === s.columns[0] ? '<span class="g-total-label">TOTAL</span>' : "") + "</td>";
+      }).join("") + "<td class='g-add'></td></tr></tfoot>";
+    }
+
+    var html = '<div class="admin-head"><div><h1>Digital list</h1><p class="sub">' +
+      "Enter the same details you keep on paper — add or remove rows and columns, and every staff phone sees the list.</p></div>" +
+      '<div class="flex" style="flex-wrap:wrap">' +
+        '<button class="btn btn-outline btn-sm" id="gridPrint">' + UI.icon("print") + " Print</button>" +
+        '<button class="btn btn-outline btn-sm" id="gridPaste">' + UI.icon("upload") + " Paste rows</button>" +
+        '<button class="btn btn-outline btn-sm" id="gridCsv">' + UI.icon("download") + " CSV</button>" +
+        '<button class="btn btn-outline btn-sm" id="gridWa">' + UI.icon("wa") + " WhatsApp</button>" +
+        '<button class="btn btn-primary btn-sm" id="gridAddRow">' + UI.icon("plus") + " Add row</button>" +
+      "</div></div>" +
+
+      chips +
+
+      '<div class="card card-pad" style="padding:14px 16px">' +
+        '<div class="flex" style="align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+          "<div style=\"min-width:0;flex:1\">" +
+            '<h3 style="margin:0">' + U.escape(s.name) + "</h3>" +
+            (s.note ? '<p class="tiny muted" style="margin:2px 0 0">' + U.escape(s.note) + "</p>" : "") +
+            '<p class="tiny" style="margin:6px 0 0"><span id="gridSync"></span></p>' +
+          "</div>" +
+          '<div class="flex" style="gap:6px;flex-wrap:wrap">' +
+            '<button class="btn btn-ghost btn-sm" id="gridListEdit">' + UI.icon("edit") + " Title</button>" +
+            '<button class="btn btn-ghost btn-sm" id="gridNewList">' + UI.icon("plus") + " New list</button>" +
+            '<button class="btn btn-ghost btn-sm" id="gridDupList">Duplicate</button>' +
+            '<button class="btn btn-ghost btn-sm" id="gridDelList">Delete list</button>' +
+          "</div>" +
+        "</div>" +
+      "</div>" +
+
+      '<div class="table-wrap mt-2 g-wrap"><table class="g-table" style="min-width:' + (150 + s.columns.length * 112) + 'px"><colgroup>' + colgroup + '</colgroup><thead>' + head + "</thead><tbody>" + body + "</tbody>" + foot + "</table></div>" +
+      (s.columns.length > 5 ? '<p class="tiny muted g-hint">Swipe the table sideways to see the last columns →</p>' : "") +
+      (s.id === SEED_ID ? '<p class="tiny muted g-hint">Typed from the printed sheet — the sheet has no entry numbered 17, so the numbers run 1–16 then 18–23.</p>' : "") +
+      (s.rows.length ? "" :
+        '<div class="card card-pad center mt-2" style="padding:26px"><p class="muted" style="margin:0 0 10px">No entries yet. Add your first row — or paste the paper list in row by row.</p>' +
+        '<button class="btn btn-primary" id="gridFirstRow">' + UI.icon("plus") + " Add the first row</button></div>") +
+
+      '<div class="card card-pad mt-2">' +
+        '<div class="flex" style="gap:18px;flex-wrap:wrap">' +
+          "<div><div class=\"tiny muted\">Entries</div><div style=\"font-weight:800;font-size:1.15rem\">" + s.rows.length + "</div></div>" +
+          moneyCols.map(function (c) {
+            return '<div><div class="tiny muted">Total ' + U.escape(c.name) + "</div><div style=\"font-weight:800;font-size:1.15rem\">" + money0(totals[c.id] || 0) + "</div></div>";
+          }).join("") +
+          (moneyCols.length >= 2 ? '<div><div class="tiny muted">Amount + Interest</div><div style="font-weight:800;font-size:1.15rem">' +
+            money0(moneyCols.slice(0, 2).reduce(function (a, c) { return a + (totals[c.id] || 0); }, 0)) + "</div></div>" : "") +
+        "</div>" +
+        '<p class="tiny muted mt-2" style="margin-bottom:0">Tip: tap a column name to rename it, change its type, move it or delete it. The ⋮ button on each row inserts, duplicates, moves or deletes it.</p>' +
+      "</div>";
+
+    CI.Admin.render("#/admin/book", html);
+    paintSyncState();
+
+    /* ---- editing ---- */
+    function isMoneyCol(colId) {
+      var c = Grid.current().columns.filter(function (x) { return x.id === colId; })[0];
+      return !!(c && c.type === "money");
+    }
+    document.querySelectorAll(".g-input").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        if (isMoneyCol(inp.getAttribute("data-col"))) {
+          var cleaned = cleanMoney(inp.value);
+          if (cleaned !== inp.value) {
+            var at = inp.selectionStart;
+            inp.value = cleaned;
+            try { inp.setSelectionRange(at, at); } catch (e) {}
+          }
+        }
+        Grid.setCell(inp.getAttribute("data-row"), inp.getAttribute("data-col"), inp.value);
+        refreshTotals();
+      });
+      inp.addEventListener("blur", function () {
+        if (!isMoneyCol(inp.getAttribute("data-col"))) return;
+        var nice = formatMoney(inp.value);
+        if (nice !== inp.value) {
+          inp.value = nice;
+          Grid.setCell(inp.getAttribute("data-row"), inp.getAttribute("data-col"), nice);
+          refreshTotals();
+        }
+      });
+      // Enter jumps to the same column on the next row — like a spreadsheet
+      inp.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        var rowId = inp.getAttribute("data-row");
+        var colId = inp.getAttribute("data-col");
+        var rows = Grid.current().rows;
+        var i = rows.findIndex(function (r) { return r.id === rowId; });
+        if (i === rows.length - 1) { Grid.addRow(); Grid.page(); setTimeout(focusCell(rows.length, colId), 60); return; }
+        focusCell(i + 1, colId)();
+      });
+    });
+    function focusCell(rowIndex, colId) {
+      return function () {
+        var rows = Grid.current().rows;
+        if (!rows[rowIndex]) return;
+        var el = document.querySelector('.g-input[data-row="' + rows[rowIndex].id + '"][data-col="' + colId + '"]');
+        if (el) { el.focus(); el.select && el.select(); }
+      };
+    }
+    function refreshTotals() {
+      var t = columnTotals(Grid.current());
+      document.querySelectorAll("[data-total]").forEach(function (td) {
+        td.textContent = money0(t[td.getAttribute("data-total")] || 0);
+      });
+    }
+
+    document.querySelectorAll("[data-colmenu]").forEach(function (b) {
+      b.onclick = function (e) { e.preventDefault(); headerMenu(b.getAttribute("data-colmenu")); };
+    });
+    document.querySelectorAll("[data-rowmenu]").forEach(function (b) {
+      b.onclick = function (e) { e.preventDefault(); rowMenu(b.getAttribute("data-rowmenu")); };
+    });
+    document.querySelectorAll("[data-list]").forEach(function (b) {
+      b.onclick = function () { Grid.setCurrent(b.getAttribute("data-list")); Grid.page(); };
+    });
+
+    var bind = function (id, fn) { var el = document.getElementById(id); if (el) el.onclick = fn; };
+    bind("addCol", addColumnDialog);
+    bind("gridPaste", pasteDialog);
+    bind("gridAddRow", function () { Grid.addRow(); Grid.page(); });
+    bind("gridFirstRow", function () { Grid.addRow(); Grid.page(); });
+    bind("gridPrint", function () { Grid.print(); });
+    bind("gridCsv", function () { Grid.exportCSV(); });
+    bind("gridWa", function () { Grid.shareWhatsApp(); });
+    bind("gridListEdit", listDialog);
+    bind("gridNewList", newListDialog);
+    bind("gridDupList", function () { Grid.duplicateSheet(s.id); Grid.page(); });
+    bind("gridDelList", function () {
+      UI.confirm({
+        title: "Delete this whole list?",
+        text: "“" + s.name + "” and its " + s.rows.length + " entries disappear from every staff phone. Other lists are untouched.",
+        ok: "Delete list", danger: true
+      }).then(function (yes) { if (yes) { Grid.deleteSheet(s.id); Grid.page(); } });
+    });
+
+    // pull fresh data the first time the tab is opened
+    Grid.pull();
+  };
+
+  CI.Grid = Grid;
 })();
 
 
@@ -4785,12 +6336,14 @@ html, body { overflow-x: hidden; }
           '<button type="button" class="btn btn-ghost btn-block mt-1" id="sDemo">Explore with sample data</button></form>'
         : '<form id="loginForm" novalidate><div class="field"><label for="aPin">Staff password</label><input type="password" id="aPin" inputmode="numeric" maxlength="12" placeholder="••••••" autocomplete="current-password" autofocus></div>' +
           '<div class="err" id="aErr"></div>' +
+          '<div id="authFix" style="display:none"></div>' +
           '<button class="btn btn-primary btn-block btn-lg mt-2" type="submit" id="aGo">Sign in &amp; load office records</button></form>' +
           '<p class="tiny muted center mt-2" id="aHint">' + (cloud
             ? "This phone will download every client record after sign-in."
             : "") + '</p>' +
           '<p class="tiny muted center mt-2"><a href="#" id="forgotPin">Forgot / reset this phone?</a></p>') +
       '<p class="tiny muted center mt-3" style="padding-top:14px;border-top:1px solid var(--line)">' + UI.icon("shield") + " Keep the staff password private. <a href=\"#/\">← Back to app</a></p>" +
+      '<p class="tiny center" style="margin:6px 0 0"><span id="loginVer" class="muted">App version</span></p>' +
       "</div></div></div>";
 
     /* ---------------- offline install: create a local PIN ---------------- */
@@ -4831,8 +6384,16 @@ html, body { overflow-x: hidden; }
     var go = document.getElementById("aGo");
 
     function fail(msg) {
-      err.textContent = msg;
+      var isTemplate = /template admin key|CHANGE_ME_ADMIN_KEY/i.test(String(msg || ""));
+      err.textContent = isTemplate
+        ? "This phone reached the office database, but the database still uses the published template key, so it refused the sign-in. One SQL line fixes it — copy it below, run it in Supabase, then sign in again."
+        : msg;
       err.style.display = "block";
+      var box = document.getElementById("authFix");
+      if (box) {
+        box.innerHTML = isTemplate ? UI.templateKeyFixHTML() : "";
+        box.style.display = isTemplate ? "block" : "none";
+      }
       go.disabled = false;
       go.textContent = "Sign in & load office records";
     }
@@ -4899,6 +6460,7 @@ html, body { overflow-x: hidden; }
         CI.App.render();
       });
     };
+    if (UI.stampVersion) UI.stampVersion();   // show the build on the sign-in card
     return false;
   };
 
@@ -4991,6 +6553,77 @@ html, body { overflow-x: hidden; }
   /* ---------------------------------------------------------------
      SHELL
      --------------------------------------------------------------- */
+  /**
+   * Every client the office knows about, whether they used this phone or not.
+   * A client who registers and applies on their own phone only ever sends the
+   * application — so the profile is rebuilt from the application/loan record.
+   */
+  function allClients() {
+    var out = [], seen = {};
+    var push = function (c) {
+      if (!c || !c.id) return;
+      if (seen[c.id]) {
+        var ex = seen[c.id];
+        ex.loans = ex.loans.concat(c.loans || []);
+        return;
+      }
+      c.loans = c.loans || [];
+      seen[c.id] = c;
+      out.push(c);
+    };
+
+    Store.state.users.forEach(function (u) {
+      push({ id: u.id, fullName: u.fullName, phone: u.phone, email: u.email || "", nrc: u.nrc || "",
+        address: u.address || "", dob: u.dob || "", createdAt: u.createdAt, userRec: u, loans: [] });
+    });
+
+    // anyone who applied but whose account record never reached this phone
+    Store.state.applications.forEach(function (a) {
+      if (!a.userId || seen[a.userId]) return;
+      push({ id: a.userId, fullName: a.fullName, phone: a.phone, email: a.email || "", nrc: a.nrc || "",
+        address: a.address || "", dob: a.dob || "", createdAt: a.createdAt, fromApplication: a, loans: [] });
+    });
+
+    Store.state.loans.forEach(function (l) {
+      if (!l.userId || seen[l.userId]) return;
+      push({ id: l.userId, fullName: l.customerName, phone: l.customerPhone, email: l.customerEmail || "",
+        nrc: "", address: "", dob: "", createdAt: l.startDate, loans: [] });
+    });
+
+    out.forEach(function (c) {
+      c.loans = Loans.forUser(c.id);
+      c.applications = Loans.appsForUser(c.id);
+      c.payments = Store.state.payments.filter(function (p) { return p.userId === c.id; });
+      c.outstanding = c.loans.reduce(function (sum, l) {
+        var f = Calc.loanFinance(l);
+        return l.status === "cancelled" ? sum : sum + f.balance;
+      }, 0);
+      c.paidTotal = c.payments.reduce(function (sum, p) { return sum + Number(p.amount || 0); }, 0);
+      c.overdue = c.loans.some(function (l) { var f = Calc.loanFinance(l); return f.balance > 0.009 && f.daysLeft < 0; });
+    });
+    out.sort(function (x, y) { return new Date(y.createdAt || 0) - new Date(x.createdAt || 0); });
+    return out;
+  }
+  Admin.allClients = allClients;
+
+  /** One client's statement: every application, loan and payment in one list. */
+  function clientStatement(c) {
+    var rows = [];
+    c.applications.forEach(function (a) {
+      rows.push({ when: a.createdAt, kind: "Application", ref: a.ref, detail: U.money(a.amount) + " · " + a.weeks + " wk", status: a.status, amount: null });
+    });
+    c.loans.forEach(function (l) {
+      var f = Calc.loanFinance(l);
+      rows.push({ when: l.startDate, kind: "Loan approved", ref: l.ref, detail: "Total " + U.money(l.total), status: f.status, amount: null });
+    });
+    c.payments.forEach(function (p) {
+      rows.push({ when: p.date, kind: p.confirmed ? "Payment" : "Payment (unconfirmed)", ref: p.ref, detail: p.method + " · " + p.loanRef, status: p.confirmed ? "confirmed" : "pending", amount: p.amount });
+    });
+    rows.sort(function (a, b) { return new Date(b.when) - new Date(a.when); });
+    return rows;
+  }
+  Admin.clientStatement = clientStatement;
+
   Admin.render = function (activeKey, content) {
     if (CI.UI && CI.UI.hideInstallBanner) CI.UI.hideInstallBanner();
     var nav = UI.adminNav;
@@ -5521,30 +7154,32 @@ html, body { overflow-x: hidden; }
      CLIENTS
      --------------------------------------------------------------- */
   Admin.clients = function () {
-    var users = Store.state.users;
-    var rows = users.map(function (u) {
-      var loans = Loans.forUser(u.id);
-      var outstanding = loans.reduce(function (s, l) {
-        var f = Calc.loanFinance(l);
-        return l.status === "cancelled" ? s : s + f.balance;
-      }, 0);
-      var hasOverdue = loans.some(function (l) { var f = Calc.loanFinance(l); return f.balance > 0.009 && f.daysLeft < 0; });
-      return "<tr data-status='" + (hasOverdue ? "overdue" : "ok") + "' data-search='" + U.escape((u.fullName + " " + u.phone + " " + (u.nrc || "")).toLowerCase()) + "'>" +
-        "<td><div class='flex'><span class='avatar-btn' style='width:32px;height:32px;font-size:.66rem;cursor:default'>" + U.initials(u.fullName) + "</span>" +
-        "<div><div class='cell-main'>" + U.escape(u.fullName) + "</div><div class='cell-sub'>" + U.escape(u.phone) + "</div></div></div></td>" +
-        "<td>" + U.escape(u.nrc || "—") + "</td>" +
-        "<td>" + loans.length + "</td>" +
-        "<td class='mono'>" + U.money(outstanding) + "</td>" +
-        "<td>" + (hasOverdue ? '<span class="pill pill-danger">Overdue</span>' : outstanding > 0 ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-muted">Clear</span>') + "</td>" +
-        "<td>" + U.fmtDate(u.createdAt) + "</td>" +
-        "<td class='t-right'><button class='btn btn-sm btn-outline' data-client='" + u.id + "'>Open</button></td></tr>";
+    var clients = allClients();
+    var rows = clients.map(function (c) {
+      return "<tr data-status='" + (c.overdue ? "overdue" : "ok") + "' data-search='" + U.escape((c.fullName + " " + c.phone + " " + (c.nrc || "") + " " + (c.email || "")).toLowerCase()) + "'>" +
+        "<td><div class='flex'><span class='avatar-btn' style='width:32px;height:32px;font-size:.66rem;cursor:default'>" + U.initials(c.fullName) + "</span>" +
+        "<div><div class='cell-main'>" + U.escape(c.fullName) + "</div><div class='cell-sub'>" + U.escape(c.phone) + "</div></div></div></td>" +
+        "<td>" + U.escape(c.email || "—") + (c.emailStatus === "sent" || (c.fromApplication && c.fromApplication.emailStatus === "sent") ? '<div class="cell-sub" style="color:var(--ok)">✓ confirmed</div>' : "") + "</td>" +
+        "<td>" + U.escape(c.nrc || "—") + "</td>" +
+        "<td>" + c.loans.length + "</td>" +
+        "<td class='mono'>" + U.money(c.outstanding) + "</td>" +
+        "<td class='mono'>" + U.money(c.paidTotal) + "</td>" +
+        "<td>" + (c.overdue ? '<span class="pill pill-danger">Overdue</span>' : c.outstanding > 0 ? '<span class="pill pill-ok">Active</span>' : '<span class="pill pill-muted">Clear</span>') + "</td>" +
+        "<td class='t-right nowrap'><button class='btn btn-sm btn-primary' data-client='" + c.id + "'>Open</button></td></tr>";
     }).join("");
 
-    var html = adminHead("Clients", users.length + " registered clients.",
+    var totals = clients.reduce(function (a, c) { a.out += c.outstanding; a.paid += c.paidTotal; return a; }, { out: 0, paid: 0 });
+    var html = adminHead("Clients", clients.length + " clients · every application, loan and payment in one place.",
       '<button class="btn btn-outline btn-sm" id="expClients">' + UI.icon("download") + " Export CSV</button>") +
-      '<div class="toolbar">' + searchBox("clientSearch", "Search name, phone or NRC…") + "</div>" +
-      '<div class="table-wrap mt-2"><table><thead><tr><th>Client</th><th>NRC</th><th>Loans</th><th>Outstanding</th><th>Status</th><th>Joined</th><th class="t-right"></th></tr></thead><tbody>' +
-      rows + noRows("clientTableEmpty", 7) + "</tbody></table></div>";
+      '<div class="kpis">' +
+      '<div class="card kpi accent"><div class="k-label">Clients</div><div class="k-value">' + clients.length + '</div><div class="k-sub">All devices</div></div>' +
+      '<div class="card kpi"><div class="k-label">Outstanding</div><div class="k-value">' + U.money0(totals.out) + '</div><div class="k-sub">Across the book</div></div>' +
+      '<div class="card kpi"><div class="k-label">Collected</div><div class="k-value">' + U.money0(totals.paid) + '</div><div class="k-sub">All payments</div></div>' +
+      '<div class="card kpi"><div class="k-label">Overdue</div><div class="k-value">' + clients.filter(function (c) { return c.overdue; }).length + '</div><div class="k-sub">Need follow-up</div></div>' +
+      "</div>" +
+      '<div class="toolbar mt-2">' + searchBox("clientSearch", "Search name, phone, NRC or email…") + "</div>" +
+      '<div class="table-wrap mt-2"><table><thead><tr><th>Client</th><th>Email</th><th>NRC</th><th>Loans</th><th class="t-right">Outstanding</th><th class="t-right">Paid</th><th>Status</th><th></th></tr></thead><tbody>' +
+      rows + noRows("clientTableEmpty", 8) + "</tbody></table></div>";
 
     Admin.render("#/admin/clients", html);
     (function () {
@@ -5565,49 +7200,221 @@ html, body { overflow-x: hidden; }
   };
 
   Admin.openClient = function (id) {
-    var u = Store.state.users.find(function (x) { return x.id === id; });
-    if (!u) return;
-    var loans = Loans.forUser(id);
-    var apps = Loans.appsForUser(id);
-    var out = loans.reduce(function (s, l) { var f = Calc.loanFinance(l); return l.status === "cancelled" ? s : s + f.balance; }, 0);
-    var lastApp = apps[0];
+    var c = allClients().filter(function (x) { return x.id === id; })[0];
+    if (!c) return UI.toast("Client not found on this device yet — tap Sync now.", "warn");
+    var u = c.userRec || c.fromApplication || {};
+    var rows = clientStatement(c);
+    var app0 = c.applications[0];
+    var f0 = c.loans[0] ? Calc.loanFinance(c.loans[0]) : null;
+
     var body =
-      '<div class="flex" style="gap:14px;align-items:center"><span class="avatar-btn" style="width:56px;height:56px;font-size:1.1rem;cursor:default">' + U.initials(u.fullName) + "</span>" +
-      "<div><h3 style='margin:0'>" + U.escape(u.fullName) + "</h3><div class='small muted'>" + U.escape(u.phone) + " · joined " + U.fmtDate(u.createdAt) + "</div></div></div>" +
+      '<div class="flex" style="gap:14px;align-items:center"><span class="avatar-btn" style="width:56px;height:56px;font-size:1.1rem;cursor:default">' + U.initials(c.fullName) + "</span>" +
+      "<div><h3 style='margin:0'>" + U.escape(c.fullName) + "</h3><div class='small muted'>" + U.escape(c.phone) +
+      (c.email ? " · " + U.escape(c.email) : "") + " · joined " + U.fmtDate(c.createdAt) + "</div></div></div>" +
+      (c.email ? '<p class="tiny" style="margin:8px 0 0;color:' + ((u.emailStatus || (app0 && app0.emailStatus)) === "sent" ? "var(--ok)" : "var(--muted)") + '">' +
+        ((u.emailStatus || (app0 && app0.emailStatus)) === "sent" ? "✓ Confirmation email sent to " + U.escape(c.email) : "Email on file: " + U.escape(c.email)) + "</p>" : "") +
       '<div class="kpis mt-2" style="grid-template-columns:1fr 1fr">' +
-      '<div class="card kpi" style="padding:14px"><div class="k-label">Outstanding</div><div class="k-value" style="font-size:1.3rem">' + U.money(out) + "</div></div>" +
-      '<div class="card kpi" style="padding:14px"><div class="k-label">Loans taken</div><div class="k-value" style="font-size:1.3rem">' + loans.length + "</div></div>" +
+      '<div class="card kpi" style="padding:14px"><div class="k-label">Outstanding</div><div class="k-value" style="font-size:1.3rem">' + U.money(c.outstanding) + "</div></div>" +
+      '<div class="card kpi" style="padding:14px"><div class="k-label">Paid to date</div><div class="k-value" style="font-size:1.3rem">' + U.money(c.paidTotal) + "</div></div>" +
       "</div>" +
       '<div class="mini-rows mt-2">' +
-      '<div class="mr"><span>NRC</span><b>' + U.escape(u.nrc || (lastApp ? lastApp.nrc : "—")) + "</b></div>" +
-      (u.dob ? '<div class="mr"><span>DOB</span><b>' + U.fmtDate(u.dob) + "</b></div>" : "") +
-      (u.email ? '<div class="mr"><span>Email</span><b>' + U.escape(u.email) + "</b></div>" : "") +
-      '<div class="mr"><span>Address</span><b>' + U.escape(u.address || (lastApp ? lastApp.address : "—")) + "</b></div>" +
-      (lastApp ? '<div class="mr"><span>Employment</span><b>' + U.escape(lastApp.employment || "—") + "</b></div>" +
-        '<div class="mr"><span>Monthly income</span><b>' + U.money0(lastApp.income) + "</b></div>" : "") +
+      '<div class="mr"><span>NRC</span><b>' + U.escape(c.nrc || (app0 ? app0.nrc : "—")) + "</b></div>" +
+      (c.dob ? '<div class="mr"><span>DOB</span><b>' + U.fmtDate(c.dob) + "</b></div>" : "") +
+      '<div class="mr"><span>Address</span><b>' + U.escape(c.address || (app0 ? app0.address : "—")) + "</b></div>" +
+      (app0 && app0.employment ? '<div class="mr"><span>Employment</span><b>' + U.escape(app0.employment) + "</b></div>" : "") +
+      (app0 && app0.income ? '<div class="mr"><span>Monthly income</span><b>' + U.money0(app0.income) + "</b></div>" : "") +
+      (f0 ? '<div class="mr"><span>Next due</span><b>' + U.fmtDate(c.loans[0].dueDate) + " · " + U.money(f0.balance) + "</b></div>" : "") +
       "</div>" +
       '<div class="flex mt-2" style="flex-wrap:wrap">' +
-      '<a class="btn btn-sm btn-primary" href="tel:' + U.escape(u.phone) + '">' + UI.icon("phone") + " Call</a>" +
-      '<a class="btn btn-sm btn-outline" href="https://wa.me/' + U.toWa(u.phone) + '" target="_blank" rel="noopener">' + UI.icon("wa") + " WhatsApp</a></div>" +
+      '<a class="btn btn-sm btn-primary" href="tel:' + U.escape(c.phone) + '">' + UI.icon("phone") + " Call</a>" +
+      '<a class="btn btn-sm btn-outline" href="https://wa.me/' + U.toWa(c.phone) + '" target="_blank" rel="noopener">' + UI.icon("wa") + " WhatsApp</a>" +
+      (c.email ? '<button class="btn btn-sm btn-outline" id="clEmail">' + UI.icon("mail") + " Email</button>" : "") +
+      '<button class="btn btn-sm btn-outline" id="clStatement">' + UI.icon("file") + " Statement</button>" +
+      "</div>" +
+
+      "<h4 class='mt-3'>Transactions</h4>" +
+      (rows.length ? '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Details</th><th class="t-right">Amount</th><th>Status</th></tr></thead><tbody>' +
+        rows.map(function (r) {
+          return "<tr><td class='nowrap'>" + U.fmtDate(r.when) + "</td><td>" + U.escape(r.kind) + "</td><td class='mono'>" + U.escape(r.ref) + "</td><td>" + U.escape(r.detail) + "</td>" +
+            "<td class='mono t-right'>" + (r.amount != null ? U.money(r.amount) : "—") + "</td><td>" + UI.pill(r.status === "confirmed" ? "ok" : r.status === "pending" ? "warn" : r.status) + "</td></tr>";
+        }).join("") + "</tbody></table></div>"
+        : '<p class="small muted">No transactions yet.</p>') +
+
       "<h4 class='mt-3'>Loans</h4>" +
-      (loans.length ? loans.map(function (l) {
+      (c.loans.length ? c.loans.map(function (l) {
         var f = Calc.loanFinance(l);
         return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("cash") + '</span><span class="di-name">' + l.ref + " · " + U.money(l.principal) + '<div class="tiny muted">Balance ' + U.money(f.balance) + " · due " + U.fmtDate(l.dueDate) + "</div></span>" + UI.pill(f.status) +
           '<button class="btn btn-sm btn-outline" data-clientloan="' + l.ref + '">Open</button></div>';
       }).join("") : '<p class="small muted">No loans.</p>') +
-      "<h4 class='mt-3'>Applications</h4>" +
-      (apps.length ? apps.map(function (a) {
-        return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("file") + '</span><span class="di-name">' + a.ref + " · " + U.money(a.amount) + '<div class="tiny muted">' + U.fmtDate(a.createdAt) + " · " + a.weeks + " wk</div></span>" + UI.pill(a.status) +
+
+      "<h4 class='mt-3'>Applications &amp; documents</h4>" +
+      (c.applications.length ? c.applications.map(function (a) {
+        var docs = Object.keys(a.documents || {});
+        return '<div class="doc-item" style="margin-bottom:6px"><span>' + UI.icon("file") + '</span><span class="di-name">' + a.ref + " · " + U.money(a.amount) +
+          '<div class="tiny muted">' + U.fmtDate(a.createdAt) + " · " + a.weeks + " wk · " + docs.length + " document" + (docs.length === 1 ? "" : "s") + "</div></span>" + UI.pill(a.status) +
           '<button class="btn btn-sm btn-outline" data-clientapp="' + a.ref + '">Open</button></div>';
       }).join("") : '<p class="small muted">No applications.</p>');
+
     Admin.openPanel("Client", body, '<button class="btn btn-ghost" onclick="CI.Admin.closePanel()">Close</button>');
     document.querySelectorAll("[data-clientloan]").forEach(function (b) { b.onclick = function () { Admin.openLoan(b.getAttribute("data-clientloan")); }; });
     document.querySelectorAll("[data-clientapp]").forEach(function (b) { b.onclick = function () { Admin.openApplication(b.getAttribute("data-clientapp")); }; });
+
+    var mailBtn = document.getElementById("clEmail");
+    if (mailBtn) mailBtn.onclick = function () {
+      UI.openModal("Email " + U.escape(c.fullName),
+        '<div class="field"><label for="clMailSubject">Subject</label><input type="text" id="clMailSubject" value="' + U.escape("CHILESHE INNOVATIONS — your loan account") + '"></div>' +
+        '<div class="field mt-2"><label for="clMailBody">Message</label><textarea id="clMailBody" rows="7">Hello ' + U.escape(c.fullName.split(" ")[0]) + ',\n\n' +
+        (c.outstanding > 0 ? "Your outstanding balance is " + U.money(c.outstanding) + "." : "Your account is up to date.") + '\n\n' +
+        'Call ' + CI.Config.business.phoneDisplay + ' if you have any questions.</textarea></div>' +
+        '<p class="tiny muted">Sent to ' + U.escape(c.email) + ' from the office email account.</p>',
+        '<button class="btn btn-outline" data-close-modal>Cancel</button><button class="btn btn-primary" id="clMailGo">' + UI.icon("mail") + " Send email</button>");
+      document.getElementById("clMailGo").onclick = function () {
+        var subject = document.getElementById("clMailSubject").value;
+        var message = document.getElementById("clMailBody").value;
+        var tpl = CI.Mail.templates.custom({ fullName: c.fullName }, subject, message);
+        CI.Mail.send({ to: c.email, name: c.fullName, subject: tpl.subject, message: tpl.message, kind: "custom", ref: c.id }).then(function (r) {
+          UI.closeModal();
+          if (r && r.ok) UI.toast("Email sent to " + c.email + ".", "ok");
+          else UI.toast("Email queued — " + (r && r.error ? r.error : "will retry"), "warn", 6000);
+          Admin.openClient(id);
+        });
+      };
+    };
+
+    var stBtn = document.getElementById("clStatement");
+    if (stBtn) stBtn.onclick = function () {
+      var html = CI.Client.statementHTML(c, rows);
+      UI.showDoc("Statement — " + c.fullName, html, {
+        download: function () { U.download("Statement-" + c.fullName.replace(/\s+/g, "-") + ".html", "<!doctype html><meta charset='utf-8'>" + html); },
+        waText: "STATEMENT — " + CI.Config.business.legalName + "\n" + c.fullName + " · " + c.phone + "\n" +
+          "Outstanding: " + U.money(c.outstanding) + "\nPaid to date: " + U.money(c.paidTotal) + "\n" +
+          rows.slice(0, 10).map(function (r) { return U.fmtDate(r.when) + "  " + r.kind + "  " + (r.amount != null ? U.money(r.amount) : r.ref); }).join("\n"),
+        waTo: U.toWa(c.phone)
+      });
+    };
   };
 
   /* ---------------------------------------------------------------
      PAYMENTS
      --------------------------------------------------------------- */
+  /* ---------------------------------------------------------------
+     EMAILS — every confirmation the app has sent
+     --------------------------------------------------------------- */
+  Admin.emails = function () {
+    var mails = CI.Mail.log().slice();
+    // A client's phone sends its own confirmations, so this device does not
+    // have those log rows — rebuild them from the synced application records.
+    var known = {};
+    mails.forEach(function (m) { if (m.ref) known[m.ref] = true; });
+    Store.state.applications.forEach(function (a) {
+      if (!a.emailStatus || known[a.ref] || !a.email) return;
+      mails.push({
+        id: "derived-" + a.ref,
+        to: a.email, name: a.fullName,
+        subject: "Application received — " + a.ref,
+        kind: "application", ref: a.ref,
+        message: "Sent from the client's own phone. Status: " + a.emailStatus,
+        status: a.emailStatus === "sent" ? "sent" : "queued",
+        attempts: 1, at: a.emailSentAt || a.createdAt, derived: true
+      });
+    });
+    mails.sort(function (x, y) { return new Date(y.at || 0) - new Date(x.at || 0); });
+    var cfg = CI.Mail.config();
+    var sent = mails.filter(function (m) { return m.status === "sent"; }).length;
+    var queued = mails.filter(function (m) { return m.status === "queued"; }).length;
+
+    var rows = mails.map(function (m) {
+      return "<tr data-status='" + (m.status === "sent" ? "sent" : "queued") + "' data-search='" + U.escape((m.to + " " + m.name + " " + m.subject).toLowerCase()) + "'>" +
+        "<td class='nowrap'>" + U.fmtDateTime(m.at) + "</td>" +
+        "<td>" + U.escape(m.name || "—") + "<div class='cell-sub'>" + U.escape(m.to) + "</div></td>" +
+        "<td>" + U.escape(m.subject) + "<div class='cell-sub'>" + U.escape(m.kind) + (m.ref ? " · " + U.escape(m.ref) : "") + "</div></td>" +
+        "<td>" + (m.status === "sent" ? '<span class="pill pill-ok">Sent</span>' : '<span class="pill pill-warn">Queued</span>') +
+        (m.derived ? "<div class='cell-sub'>from client phone</div>" : "") +
+        (m.error ? "<div class='cell-sub red'>" + U.escape(m.error) + "</div>" : "") + "</td>" +
+        "<td class='t-right nowrap'><button class='btn btn-sm btn-outline' data-mailview='" + m.id + "'>View</button> " +
+        (m.status === "queued" ? "<button class='btn btn-sm btn-primary' data-mailretry='" + m.id + "'>Retry</button>" : "") + "</td></tr>";
+    }).join("");
+
+    var html = adminHead("Emails", "Every confirmation sent to clients — registration, approval, receipts and reminders.",
+      '<button class="btn btn-outline btn-sm" id="mailTest">' + UI.icon("mail") + " Send test email</button>" +
+      '<button class="btn btn-primary btn-sm" id="mailFlush">' + UI.icon("refresh") + " Retry queued</button>") +
+      (CI.Mail.enabled()
+        ? '<div class="alert alert-ok">' + UI.icon("check") + "<div><b>Email is on.</b> Using " + U.escape(cfg.provider === "emailjs" ? "EmailJS" : "webhook") +
+          ". Confirmations go to the client's own email address.</div></div>"
+        : '<div class="alert alert-warn">' + UI.icon("alert") + "<div><b>Email is off.</b> Clients are not receiving confirmations yet. " +
+          'Add your EmailJS Service ID, Template ID and Public key in <a href="#/admin/settings">Settings → Email</a>. ' +
+          "Every message is still recorded here and will be sent once email is switched on.</div></div>") +
+      '<div class="kpis">' +
+      '<div class="card kpi accent"><div class="k-label">Sent</div><div class="k-value">' + sent + '</div><div class="k-sub">Confirmations delivered</div></div>' +
+      '<div class="card kpi warn"><div class="k-label">Queued</div><div class="k-value">' + queued + '</div><div class="k-sub">Will retry automatically</div></div>' +
+      '<div class="card kpi"><div class="k-label">Total</div><div class="k-value">' + mails.length + '</div><div class="k-sub">Last 200</div></div>' +
+      "</div>" +
+      '<div class="toolbar mt-2">' + searchBox("mailSearch", "Search email, name or subject…") + "</div>" +
+      statusChips("mailStatus", "all", [["all", "All"], ["sent", "Sent"], ["queued", "Queued"]]) +
+      '<div class="table-wrap mt-2"><table><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th><th></th></tr></thead><tbody>' +
+      rows + noRows("mailTableEmpty", 5) + "</tbody></table></div>";
+
+    Admin.render("#/admin/emails", html);
+
+    (function () {
+      var tbody = document.querySelector("#mailTableEmpty").closest("tbody");
+      var search = document.getElementById("mailSearch");
+      function apply() {
+        var q = (search.value || "").toLowerCase();
+        var chip = document.querySelector('[data-chips="mailStatus"] button.active');
+        var status = chip ? chip.getAttribute("data-filter") : "all";
+        var visible = 0;
+        tbody.querySelectorAll("tr[data-status]").forEach(function (tr) {
+          var show = (status === "all" || tr.getAttribute("data-status") === status) && (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+          tr.style.display = show ? "" : "none"; if (show) visible++;
+        });
+        document.getElementById("mailTableEmpty").style.display = visible ? "none" : "";
+      }
+      search.addEventListener("input", apply);
+      Array.prototype.forEach.call(document.querySelectorAll('[data-chips="mailStatus"] button'), function (b) {
+        b.addEventListener("click", function () { Array.prototype.forEach.call(document.querySelectorAll('[data-chips="mailStatus"] button'), function (x) { x.classList.toggle("active", x === b); }); apply(); });
+      });
+    })();
+
+    document.querySelectorAll("[data-mailview]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.getAttribute("data-mailview");
+        var m = CI.Mail.log().filter(function (x) { return x.id === id; })[0];
+        if (!m && id.indexOf("derived-") === 0) {
+          var ref = id.replace("derived-", "");
+          var a = Store.state.applications.filter(function (x) { return x.ref === ref; })[0];
+          if (a) m = { to: a.email, name: a.fullName, subject: "Application received — " + a.ref, status: a.emailStatus || "sent",
+            at: a.emailSentAt || a.createdAt, message: "This confirmation was sent from the client's own phone when they applied." };
+        }
+        if (!m) return;
+        UI.openModal(m.subject || "Email",
+          '<div class="mini-rows"><div class="mr"><span>To</span><b>' + U.escape(m.to) + "</b></div>" +
+          '<div class="mr"><span>Sent</span><b>' + U.fmtDateTime(m.sentAt || m.at) + "</b></div>" +
+          '<div class="mr"><span>Status</span><b>' + U.escape(m.status) + (m.error ? " — " + U.escape(m.error) : "") + "</b></div></div>" +
+          '<pre style="white-space:pre-wrap;font:inherit;font-size:.82rem;background:var(--line-2);padding:14px;border-radius:10px;margin-top:12px">' + U.escape(m.message) + "</pre>",
+          '<button class="btn btn-outline" data-close-modal>Close</button>');
+      };
+    });
+    document.querySelectorAll("[data-mailretry]").forEach(function (b) {
+      b.onclick = function () { b.disabled = true; CI.Mail.flush().then(function (n) { UI.toast(n + " email(s) sent.", "ok"); Admin.emails(); }); };
+    });
+    document.getElementById("mailFlush").onclick = function () {
+      if (!CI.Mail.enabled()) return UI.toast("Add the email settings first.", "warn");
+      CI.Mail.flush().then(function (n) { UI.toast(n ? n + " email(s) sent." : "Nothing could be sent yet.", n ? "ok" : "warn"); Admin.emails(); });
+    };
+    document.getElementById("mailTest").onclick = function () {
+      if (!CI.Mail.enabled()) return UI.toast("Add the email settings first (Settings → Email).", "warn");
+      var to = prompt("Send a test email to:", CI.Mail.config().staffEmail || "");
+      if (!to) return;
+      CI.Mail.send({ to: to, name: "Test", subject: "Test — CHILESHE INNOVATIONS emails", message: "This is a test from the Chileshe Loans app. If you can read this, confirmations are working.", kind: "test" })
+        .then(function (r) {
+          if (r && r.ok) UI.toast("Test email sent.", "ok");
+          else UI.toast("Could not send: " + ((r && r.error) || "unknown"), "danger", 7000);
+          Admin.emails();
+        });
+    };
+  };
+
   Admin.payments = function () {
     var pays = Store.state.payments.slice().sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
     var confirmed = pays.filter(function (p) { return p.confirmed; }).reduce(function (s, p) { return s + p.amount; }, 0);
@@ -5912,7 +7719,9 @@ html, body { overflow-x: hidden; }
     var b = CI.Config.business;
     var usage = U.approxBytes(Store.state);
     var cloud = CI.Backend.config();
+    var mail = CI.Mail.config();
     var provider = cloud.provider || (cloud.anonKey ? "supabase" : (cloud.gasEndpoint ? "gas" : "supabase"));
+
 
     var html = adminHead("Settings", "Business details, rates, security, online sync and data.",
       '<a class="btn btn-outline btn-sm" href="#/admin/reports">' + UI.icon("chart") + " Reports</a>") +
@@ -5964,6 +7773,7 @@ html, body { overflow-x: hidden; }
         ? '<div class="alert alert-ok" style="margin-top:10px">' + UI.icon("check") + '<div class="small">This app is already connected to the office database. Staff just sign in with the <b>staff password</b> on any phone. Client phones need no setup at all.</div></div>'
         : "") +
       '<div class="tiny mt-2" id="cloudStatus">' + (CI.Backend.enabled() ? "● " + (provider === "gas" ? "Apps Script" : "Supabase") + " connected" : "● Not connected — the app is working on this device only") + " · Queue: " + CI.Backend.queueSize() + "</div>" +
+      '<div class="mt-3" id="dbFixBox">' + UI.templateKeyFixHTML() + '</div>' +
       '<div class="field mt-3"><label>Your other phones / computers</label>' +
       '<p class="tiny muted" style="margin:0 0 6px">Open this on a second owner device once to connect it <b>with admin rights</b>. Keep it private.</p>' +
       '<div class="flex" style="flex-wrap:wrap;gap:6px"><input type="text" id="ownerLink" readonly value="" style="flex:1;min-width:180px">' +
@@ -5973,6 +7783,28 @@ html, body { overflow-x: hidden; }
       '<div class="flex" style="flex-wrap:wrap;gap:6px"><input type="text" id="clientLink" readonly value="" style="flex:1;min-width:180px">' +
       '<button class="btn btn-outline btn-sm" id="copyClientLink">Copy</button>' +
       '<button class="btn btn-outline btn-sm" id="shareClientLink">Share</button></div></div></div>' +
+
+      '<div class="card card-pad"><h3>Email confirmations</h3>' +
+      '<p class="tiny small muted">Clients get a confirmation email when they register, when they apply, when a loan is approved and for every payment. Free with <b>EmailJS</b> (about 5 minutes to set up — see <b>EMAIL-GUIDE.md</b>).</p>' +
+      '<p class="tiny muted">Save once here and the settings go to <b>every phone</b>, including clients’ phones — they send their own welcome, application and payment emails.</p>' +
+      '<div class="field"><label for="mailProvider">Service</label><select id="mailProvider">' +
+        '<option value=""' + (!mail.provider ? " selected" : "") + '>Off</option>' +
+        '<option value="emailjs"' + (mail.provider === "emailjs" ? " selected" : "") + '>EmailJS (recommended)</option>' +
+        '<option value="webhook"' + (mail.provider === "webhook" ? " selected" : "") + '>Custom webhook / Apps Script</option>' +
+      '</select></div>' +
+      '<div class="field mt-2"><label for="mailService">EmailJS Service ID</label><input type="text" id="mailService" value="' + U.escape(mail.serviceId) + '" placeholder="service_xxxxxxx" autocomplete="off"></div>' +
+      '<div class="field mt-2"><label for="mailTemplate">EmailJS Template ID</label><input type="text" id="mailTemplate" value="' + U.escape(mail.templateId) + '" placeholder="template_xxxxxxx" autocomplete="off"></div>' +
+      '<div class="field mt-2"><label for="mailKey">EmailJS Public key</label><input type="text" id="mailKey" value="' + U.escape(mail.publicKey) + '" placeholder="Public key from EmailJS → Account" autocomplete="off"></div>' +
+      '<div class="field mt-2"><label for="mailEndpoint">Webhook URL (only for “Custom webhook”)</label><input type="url" id="mailEndpoint" value="' + U.escape(mail.endpoint) + '" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>' +
+      '<div class="field mt-2"><label for="mailReply">Reply-to address</label><input type="email" id="mailReply" value="' + U.escape(mail.replyTo) + '" placeholder="loans@yourbusiness.zm" autocomplete="off"></div>' +
+      '<div class="field mt-2"><label for="mailStaff">Office copy (optional)</label><input type="email" id="mailStaff" value="' + U.escape(mail.staffEmail) + '" placeholder="Leave blank — or your own email to see every client mail" autocomplete="off"></div>' +
+      '<div class="flex mt-2" style="flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="saveMail">Save</button>' +
+      '<button class="btn btn-outline btn-sm" id="testMail">Send test</button>' +
+      '<a class="btn btn-outline btn-sm" href="#/admin/emails">' + UI.icon("mail") + " Email log</a></div>" +
+      '<p class="tiny mt-2" style="margin-bottom:0;color:' + (CI.Mail.enabled() ? "var(--ok)" : "var(--warn)") + '">' +
+        (CI.Mail.enabled()
+          ? "● Email is on — confirmations are being sent." + (CI.Mail.config().publicKey && !(mail.publicKey) ? " Settings received from the office." : "")
+          : "● Email is off — confirmations are saved and will send once configured.") + "</p></div>" +
 
       '<div class="card card-pad"><h3>Data &amp; backup</h3>' +
       '<p class="small muted">Storage used: <b>' + U.bytesLabel(usage) + "</b> of roughly 5 MB available in this browser." + (usage > 3.5e6 ? ' <span class="red">Running low — export a backup.</span>' : "") + "</p>" +
@@ -5993,7 +7825,9 @@ html, body { overflow-x: hidden; }
       '<div class="mini-rows"><div class="mr"><span>App version</span><b>' + CI.Config.version + "</b></div>" +
       '<div class="mr"><span>Records</span><b>' + Store.state.users.length + " clients · " + Store.state.loans.length + " loans</b></div>" +
       '<div class="mr"><span>Storage</span><b>On this device</b></div></div>' +
-      '<button class="btn btn-outline btn-sm mt-1" id="installAdmin">' + UI.icon("download") + " Install app</button></div>" +
+      '<div class="flex mt-1" style="flex-wrap:wrap"><button class="btn btn-outline btn-sm" id="installAdmin">' + UI.icon("download") + " Install app</button>" +
+      '<button class="btn btn-outline btn-sm" id="forceUpdate">' + UI.icon("refresh") + " Force update</button></div>" +
+      '<p class="tiny muted" style="margin:8px 0 0">This phone runs <b>v' + CI.Config.version + '</b>. If a new feature does not appear, tap <b>Force update</b> — it clears the old copy and reloads.</p></div>' +
       "</div>";
 
     Admin.render("#/admin/settings", html);
@@ -6146,6 +7980,40 @@ html, body { overflow-x: hidden; }
       }).catch(function (err) { UI.toast("Push failed: " + err.message, "danger"); });
     };
 
+    document.getElementById("saveMail").onclick = function () {
+      Store.state.settings.mail = {
+        provider: document.getElementById("mailProvider").value,
+        serviceId: document.getElementById("mailService").value.trim(),
+        templateId: document.getElementById("mailTemplate").value.trim(),
+        publicKey: document.getElementById("mailKey").value.trim(),
+        endpoint: document.getElementById("mailEndpoint").value.trim(),
+        replyTo: document.getElementById("mailReply").value.trim(),
+        staffEmail: document.getElementById("mailStaff").value.trim()
+      };
+      Store.save();
+      var btn = this;
+      btn.disabled = true;
+      CI.Mail.publish(Store.state.settings.mail).then(function (r) {
+        btn.disabled = false;
+        var ok = CI.Mail.enabled();
+        if (r && r.ok) {
+          UI.toast(ok ? "Email saved and sent to every phone." : "Saved to every phone — finish the details to switch email on.", ok ? "ok" : "warn", 5000);
+        } else if (r && r.error && !/not a staff device/i.test(r.error)) {
+          UI.toast("Saved on this phone, but could not reach the other phones: " + r.error, "warn", 6000);
+        } else {
+          UI.toast(ok ? "Email configured on this phone." : "Saved — add the remaining details to switch email on.", ok ? "ok" : "warn");
+        }
+        CI.App.render();
+      });
+    };
+    document.getElementById("testMail").onclick = function () {
+      if (!CI.Mail.enabled()) return UI.toast("Choose EmailJS and fill the three IDs first.", "warn");
+      var to = prompt("Send a test email to:", CI.Mail.config().staffEmail || CI.Config.business.email || "");
+      if (!to) return;
+      CI.Mail.send({ to: to, name: "Test", subject: "Test — CHILESHE INNOVATIONS email", message: "If you can read this, confirmations from the loan app are working.", kind: "test" })
+        .then(function (r) { UI.toast(r && r.ok ? "Test email sent to " + to + "." : "Could not send: " + ((r && r.error) || "unknown"), r && r.ok ? "ok" : "danger", 7000); });
+    };
+
     document.getElementById("dlBackup").onclick = function () { U.download("Chileshe-Backup-" + U.todayISO() + ".json", Store.exportJSON(), "application/json"); UI.toast("Backup downloaded."); };
     document.getElementById("restoreFile").onchange = function (e) {
       var f = e.target.files[0];
@@ -6197,6 +8065,8 @@ html, body { overflow-x: hidden; }
       };
     };
     document.getElementById("installAdmin").onclick = UI.promptInstall;
+    var fu = document.getElementById("forceUpdate");
+    if (fu) fu.onclick = function () { CI.App.forceUpdate(); };
   };
 
   /* ---------------------------------------------------------------
@@ -6208,7 +8078,9 @@ html, body { overflow-x: hidden; }
       case "applications": return Admin.applications();
       case "loans": return Admin.loans();
       case "clients": return Admin.clients();
+      case "book": return CI.Grid.page();
       case "payments": return Admin.payments();
+      case "emails": return Admin.emails();
       case "reminders": return Admin.reminders();
       case "reports": return Admin.reports();
       case "settings": return Admin.settings();
@@ -6389,10 +8261,18 @@ html, body { overflow-x: hidden; }
 
   /** Sync with the cloud (if configured). Silent unless force is used. */
   App.syncNow = function (force) {
+    // retry any confirmation emails that were queued while offline
+    if (CI.Mail && CI.Mail.flush) CI.Mail.flush();
     if (!CI.Backend || !CI.Backend.enabled()) return Promise.resolve(false);
     if (!navigator.onLine) return Promise.resolve(false);
     var path = location.hash.replace(/^#/, "") || "/";
-    return CI.Backend.autoSync({ force: !!force }).then(function (res) {
+    // pick up the office's email settings first, so this phone can send too
+    var mailReady = (CI.Mail && CI.Mail.refreshCloud) ? CI.Mail.refreshCloud() : Promise.resolve(false);
+    // and the staff digital lists
+    var listsReady = (CI.Grid && CI.Grid.pull) ? CI.Grid.pull() : Promise.resolve(false);
+    return Promise.all([mailReady, listsReady]).then(function () {
+      return CI.Backend.autoSync({ force: !!force });
+    }).then(function (res) {
       if (res && res.updated) {
         Calc.buildReminders();
         App.render();
@@ -6402,9 +8282,39 @@ html, body { overflow-x: hidden; }
       }
       return !!(res && res.updated);
     }).catch(function (err) {
-      if (force) UI.toast("Sync failed: " + err.message, "danger", 6000);
+      var templateKey = /template admin key|CHANGE_ME_ADMIN_KEY/i.test(String(err && err.message || ""));
+      if (force) {
+        UI.toast(templateKey
+          ? "Sync failed: the office database still uses the published template key. Open Settings → Online sync and copy the one-line fix."
+          : "Sync failed: " + err.message, "danger", 8000);
+      }
+      if (templateKey && force && CI.Session.isAdmin()) {
+        try { sessionStorage.setItem("chileshe_open_fix", "1"); } catch (e) {}
+        location.hash = "#/admin/settings";
+      }
       return false;
     }).then(function (v) { void path; return v; });
+  };
+
+  /** Nuke every cache and the service worker, then reload. This is the escape
+   *  hatch when a phone insists on showing an old version. */
+  App.forceUpdate = function () {
+    var done = function () {
+      var p = ("caches" in window) ? caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      }) : Promise.resolve();
+      p.catch(function () {}).then(function () {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (rs) {
+            return Promise.all(rs.map(function (r) { return r.unregister(); }));
+          }).catch(function () {}).then(function () { location.reload(); });
+        } else {
+          location.reload();
+        }
+      });
+    };
+    UI.toast("Clearing the old copy of the app…", "ok", 2500);
+    setTimeout(done, 400);
   };
 
   App.logout = function () {
@@ -6574,9 +8484,19 @@ html, body { overflow-x: hidden; }
       /^(10\.|192\.168\.)/.test(location.hostname);
     if ("serviceWorker" in navigator && secure && !window.CI_NO_SW) {
       var registerSW = function () {
-        navigator.serviceWorker.register("sw.js").then(function (reg) {
-          // pull updates when the app is reopened
+        // updateViaCache: "none" — never let the browser serve a stale sw.js,
+        // which is exactly what pins a phone to an old version of the app.
+        navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function (reg) {
           if (reg && reg.update) reg.update();
+          // when a newly installed worker takes over, reload once so the staff
+          // member immediately sees the new version instead of the cached one
+          if (!window.__ciReloaded) {
+            navigator.serviceWorker.addEventListener("controllerchange", function () {
+              if (window.__ciReloaded) return;
+              window.__ciReloaded = true;
+              location.reload();
+            });
+          }
         }).catch(function (err) {
           console.warn("Service worker registration failed:", err);
         });

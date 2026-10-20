@@ -50,6 +50,7 @@ watch every due date, run reports).
 | Loan book | Every loan with principal, interest, paid, balance, due date, countdown, status |
 | Clients | **Every client, every transaction, on any phone** — sign in with the staff password and the full book appears; profiles, documents, contact buttons (call / WhatsApp), per-client statement |
 | **Emails** | Log of every confirmation email (sent / queued / failed + reason), resend, and a one-tap test |
+| **Digital list** | A spreadsheet tab, **pre-filled with the office's 22-entry list**: No · Names · Amount · Interest · Numbers · Collateral · Date · Due Date. Add or remove **rows and columns**, paste a whole list from Excel/WhatsApp, auto money totals (K21,650 + K10,725 = K32,375), print, CSV and WhatsApp — all staff phones share it |
 | Payments | Confirm client-declared payments, record office payments, receipts, delete mistakes |
 | Reminders | Overdue / due-today / due-this-week lists with one-tap WhatsApp reminders |
 | Reports | Monthly disbursements, collections, interest, loan book, CSV + JSON backup |
@@ -85,6 +86,7 @@ js/client.js                ← auth, shared components, printable documents
 js/pages.js                 ← home, rates, calculator, apply, track, auth, legal
 js/account.js               ← dashboard, loan details, payments, profile
 js/mail.js                  ← automatic confirmation emails (EmailJS / webhook)
+js/grid.js                  ← staff digital list (spreadsheet tab)
 js/admin.js                 ← owner dashboard
 js/onboarding.js            ← first-run welcome
 js/app.js                   ← router + bootstrap

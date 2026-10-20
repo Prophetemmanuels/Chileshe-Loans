@@ -38,6 +38,13 @@ create table if not exists private.app_config (
   updated_at timestamptz not null default now()
 );
 
+-- staff digital lists (the spreadsheet tab): one JSON document per list
+create table if not exists private.sheets (
+  id         text primary key,
+  data       jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists private.applications (
   id          text primary key,
   ref         text,
@@ -536,6 +543,88 @@ set search_path = public, extensions, pg_temp as $$
   )
 $$;
 
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Email settings published by the office so every phone sends mail the same way
+--  (client phones send their own welcome / application / payment emails).
+--  These values are public-safe: the EmailJS public key is designed for browsers.
+-- ─────────────────────────────────────────────────────────────────────────────
+create or replace function public.public_mail_config()
+returns jsonb language sql security definer
+set search_path = public, extensions, pg_temp as $$
+  select coalesce((
+    select value::jsonb from private.app_config where key = 'mail_config'
+  ), '{}'::jsonb)
+$$;
+
+create or replace function public.owner_set_mail(p_key text, p_config jsonb)
+returns jsonb language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare v_status text;
+begin
+  v_status := private.check_owner_(p_key);
+  if v_status <> 'ok' then
+    return jsonb_build_object('ok', false, 'error', private.owner_error_(v_status));
+  end if;
+  insert into private.app_config (key, value, updated_at)
+  values ('mail_config', coalesce(p_config, '{}'::jsonb)::text, now())
+  on conflict (key) do update set value = excluded.value, updated_at = now();
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Staff digital lists — the spreadsheet tab. Staff only (same key check).
+-- ─────────────────────────────────────────────────────────────────────────────
+create or replace function public.owner_sheets_pull(p_key text)
+returns jsonb language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare v_status text;
+begin
+  v_status := private.check_owner_(p_key);
+  if v_status <> 'ok' then
+    return jsonb_build_object('ok', false, 'error', private.owner_error_(v_status));
+  end if;
+  return jsonb_build_object('ok', true, 'sheets', coalesce((
+    select jsonb_agg(data order by updated_at) from private.sheets
+  ), '[]'::jsonb));
+end $$;
+
+create or replace function public.owner_sheets_push(p_key text, p_sheets jsonb)
+returns jsonb language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare
+  v_status text; s jsonb; v_id text; v_ts timestamptz; v_saved int := 0;
+begin
+  v_status := private.check_owner_(p_key);
+  if v_status <> 'ok' then
+    return jsonb_build_object('ok', false, 'error', private.owner_error_(v_status));
+  end if;
+  if p_sheets is null or jsonb_typeof(p_sheets) <> 'array' then
+    return jsonb_build_object('ok', true, 'saved', 0);
+  end if;
+  if length(p_sheets::text) > 2000000 then
+    raise exception 'That list is too large to sync (max ~2 MB)';
+  end if;
+
+  for s in select * from jsonb_array_elements(p_sheets) loop
+    v_id := coalesce(s ->> 'id', '');
+    if v_id = '' then continue; end if;
+    begin
+      v_ts := coalesce((s ->> 'updatedAt')::timestamptz, now());
+    exception when others then
+      v_ts := now();
+    end;
+    insert into private.sheets (id, data, updated_at)
+    values (v_id, s, v_ts)
+    on conflict (id) do update
+      set data = excluded.data, updated_at = excluded.updated_at
+      where private.sheets.updated_at <= excluded.updated_at;
+    v_saved := v_saved + 1;
+  end loop;
+
+  return jsonb_build_object('ok', true, 'saved', v_saved);
+end $$;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 --  7. Lock everything down: no direct table access, only these functions
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -545,6 +634,7 @@ alter table private.loans        enable row level security;
 alter table private.payments     enable row level security;
 alter table private.documents    enable row level security;
 alter table private.owner_auth   enable row level security;
+alter table private.sheets       enable row level security;
 
 revoke all on all tables    in schema private from public;
 revoke all on all sequences in schema private from public;
@@ -561,6 +651,10 @@ revoke all on function public.client_push(text, jsonb, jsonb, jsonb)      from p
 revoke all on function public.client_push_document(text, text, text, text, text, text) from public;
 revoke all on function public.client_document(text, text, text)           from public;
 revoke all on function public.backend_info()                              from public;
+revoke all on function public.public_mail_config()                         from public;
+revoke all on function public.owner_set_mail(text, jsonb)                  from public;
+revoke all on function public.owner_sheets_pull(text)                      from public;
+revoke all on function public.owner_sheets_push(text, jsonb)               from public;
 
 grant execute on function public.owner_ping(text)                         to anon, authenticated;
 grant execute on function public.owner_pull(text)                         to anon, authenticated;
@@ -573,6 +667,10 @@ grant execute on function public.client_push(text, jsonb, jsonb, jsonb)   to ano
 grant execute on function public.client_push_document(text, text, text, text, text, text) to anon, authenticated;
 grant execute on function public.client_document(text, text, text)        to anon, authenticated;
 grant execute on function public.backend_info()                           to anon, authenticated;
+grant execute on function public.public_mail_config()                      to anon, authenticated;
+grant execute on function public.owner_set_mail(text, jsonb)               to anon, authenticated;
+grant execute on function public.owner_sheets_pull(text)                   to anon, authenticated;
+grant execute on function public.owner_sheets_push(text, jsonb)            to anon, authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 --  8. Store the admin key (bcrypt hash). EDIT THE KEY IN THIS LINE.

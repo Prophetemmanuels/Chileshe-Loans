@@ -1,0 +1,12 @@
+CHILESHE INNOVATIONS — APP BUILD
+
+Version : 1.5.4
+Build   : 2026-10-20 10:57
+Digital list tab : PRESENT (menu item + #/admin/book)
+Office list      : 22 entries (No 1-16, 18-23)
+sw.js version    : chileshe-v1.5.4
+
+Upload these files at the TOP LEVEL of the repo — index.html and sw.js
+must sit next to each other, not inside a folder.
+
+How to prove you have this build: open index.html and search for 'Digital list'.
